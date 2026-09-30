@@ -37,7 +37,11 @@ print(f"[{time.time()-t0:5.0f}s] terrain: HAND-major p5/50 {np.nanpercentile(ter
 arrs = dict(dem=ter.dem, slope=ter.slope, aspect=ter.aspect, hand=ter.hand, hand_major=ter.hand_major, catch=ter.catchment_km2, rivers=ter.rivers)
 tracks = []
 for st in sar.select_stacks(bbox, EVENT):
-    sd = sar.load_stack(st, grid)
+    try:
+        sd = sar.load_stack(st, grid)
+    except RuntimeError as e:
+        print(f"[{time.time()-t0:5.0f}s] {st.describe()} — skipped: {e}")
+        continue
     cover = float(np.isfinite(sd.post_vv).mean())
     if cover < 0.3:
         print(f"[{time.time()-t0:5.0f}s] {st.describe()} — skipped: covers only {cover:.0%} of the area")

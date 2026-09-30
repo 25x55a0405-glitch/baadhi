@@ -39,7 +39,7 @@ def layer(aoi: int, name: str) -> list:
     files = glob.glob(str(_latest_package(aoi) / f"*_{name}_v*.json"))
     feats = []
     for f in files:
-        feats += json.loads(Path(f).read_text(encoding="utf8"))["features"]
+        feats += [x for x in json.loads(Path(f).read_text(encoding="utf8"))["features"] if x.get("geometry")]  # a few have no geometry
     return feats
 
 

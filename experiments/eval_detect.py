@@ -22,7 +22,7 @@ OUT = Path(__file__).parent / "out"
 def load(name):
     z = np.load(CACHE / f"dev_{name}.npz")
     terrain = {"hand_major": z["hand_major"], "slope": z["slope"]}
-    tracks = [{"z_vv": z[f"t{t}_z_vv"], "z_vh": z[f"t{t}_z_vh"], "good": z[f"t{t}_good"]} for t in z["tracks"]]
+    tracks = [{k: z[f"t{t}_{k}"] for k in ("z_vv", "z_vh", "good", "post_vv", "post_vh", "d_vv", "d_vh")} for t in z["tracks"]]
     s2 = lambda tag: {k: z[f"s2{tag}_{k}"] for k in ("ndvi", "bsi", "bright", "mndwi")} if f"s2{tag}_ndvi" in z else None  # noqa: E731
     return z, terrain, tracks, s2("pre"), s2("post")
 

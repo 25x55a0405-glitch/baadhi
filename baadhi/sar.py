@@ -59,11 +59,28 @@ class StackData:
 
 
 def load_stack(stack: TrackStack, grid: Grid, workers: int = 6) -> StackData:
-    """Read all passes of a stack in parallel (each read is a handful of HTTP range requests)."""
+    """Read all passes of a stack in parallel (each read is a handful of HTTP range requests).
+
+    One unreadable file must not sink a live analysis: a failed pre-event pass is dropped (the others
+    still form the baseline); if the post-event pass fails, the whole track is dropped (raises)."""
     passes = stack.pre + [stack.post]
+
+    def safe(p):
+        try:
+            return P.read_s1(p, grid)
+        except Exception as e:  # noqa: BLE001
+            return e
+
     with ThreadPoolExecutor(workers) as ex:
-        arrays = list(ex.map(lambda p: P.read_s1(p, grid), passes))
-    pre, post = arrays[:-1], arrays[-1]
+        arrays = list(ex.map(safe, passes))
+    post = arrays[-1]
+    if isinstance(post, Exception):
+        raise RuntimeError(f"track {stack.track}: after-image {stack.post.date} unreadable ({post})")
+    pre_ok = [(p, a) for p, a in zip(stack.pre, arrays[:-1]) if not isinstance(a, Exception)]
+    if not pre_ok:
+        raise RuntimeError(f"track {stack.track}: no readable before-image")
+    stack.pre = [p for p, _ in pre_ok]
+    pre = [a for _, a in pre_ok]
     return StackData(stack, [a["vv"] for a in pre], [a["vh"] for a in pre], post["vv"], post["vh"])
 
 

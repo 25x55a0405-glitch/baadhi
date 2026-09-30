@@ -24,6 +24,8 @@ CACHE = Path(__file__).resolve().parents[2] / "data" / "cache" / "osm"
 UA = {"User-Agent": "Baadhi/0.1 (flood damage mapping research; github.com)", "Accept": "application/json"}
 
 LAYERS = ("waterways", "water", "buildings", "roads", "bridges", "places", "health")
+# Fetched over a wider area (~25 km around), so routes can reach hospitals and towns beyond the analysis area
+CONTEXT_LAYERS = ("roads_major", "health", "towns")
 
 OHSOME_FILTER = {
     "waterways": "waterway in (river, stream, canal, drain) and type:way",
@@ -34,6 +36,9 @@ OHSOME_FILTER = {
     "bridges": "(bridge=* and bridge!=no and type:way) or man_made=bridge",
     "places": "place in (city, town, village, hamlet, isolated_dwelling, suburb, neighbourhood, locality) and type:node",
     "health": "(amenity in (hospital, clinic, doctors) or healthcare in (hospital, clinic, centre, doctor)) and (type:node or type:way)",
+    "roads_major": "highway in (motorway, trunk, primary, secondary, tertiary, unclassified, road, motorway_link, trunk_link, "
+                   "primary_link, secondary_link, tertiary_link) and type:way",
+    "towns": "place in (city, town) and type:node",
 }
 ROAD_RE = "^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|track|living_street|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link|path|footway|steps|bridleway)$"
 OVERPASS_Q = {
@@ -44,6 +49,8 @@ OVERPASS_Q = {
     "bridges": 'way["bridge"]["bridge"!="no"]({b});way["man_made"="bridge"]({b});node["man_made"="bridge"]({b});',
     "places": 'node["place"~"^(city|town|village|hamlet|isolated_dwelling|suburb|neighbourhood|locality)$"]({b});',
     "health": 'nwr["amenity"~"^(hospital|clinic|doctors)$"]({b});nwr["healthcare"~"^(hospital|clinic|centre|doctor)$"]({b});',
+    "roads_major": 'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]({b});',
+    "towns": 'node["place"~"^(city|town)$"]({b});',
 }
 POLYGON_LAYERS = {"water", "buildings"}
 KEEP_TAGS = {"name", "name:en", "name:ne", "highway", "bridge", "waterway", "place", "amenity", "healthcare", "building",
@@ -157,3 +164,16 @@ def fetch(layer: str, bbox, when: dt.date, timeout: int = 180) -> dict:
 def fetch_all(bbox, event: dt.date, layers=LAYERS) -> dict[str, dict]:
     when = snapshot_date(event)
     return {name: fetch(name, bbox, when) for name in layers}
+
+
+def expand(bbox, km: float):
+    import math
+    lat = (bbox[1] + bbox[3]) / 2
+    dlat, dlon = km / 111.0, km / (111.0 * max(math.cos(math.radians(lat)), 0.2))
+    return (bbox[0] - dlon, bbox[1] - dlat, bbox[2] + dlon, bbox[3] + dlat)
+
+
+def fetch_context(bbox, event: dt.date, km: float = 25.0) -> dict[str, dict]:
+    """Main roads, health facilities and towns in a wider box, for routing beyond the analysis area."""
+    when, big = snapshot_date(event), expand(bbox, km)
+    return {f"context_{name}": fetch(name, big, when, timeout=300) for name in CONTEXT_LAYERS}

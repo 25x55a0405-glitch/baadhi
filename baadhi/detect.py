@@ -11,6 +11,7 @@ Evidence, per pixel:
   Radar (Sentinel-1, per track, only where that track sees the ground properly — no layover/shadow)
     changed     |change| ≥ 3 × the pixel's own pass-to-pass variability, in VV or VH
     agreed      two tracks each show ≥ 2 ×
+    water       very dark after (VV ≤ −15 dB, VH ≤ −22 dB) and ≥ 3 dB darker than before
   Model         flood-water probability from the Kuro Siwo-trained network (optional)
 Terrain gate: water ≤ 30 m and debris ≤ 80 m above the main river, slope ≤ 35° — or up to 60°
 on banks within 60 m of the river (debris flows scour and undercut gorge banks).
@@ -42,6 +43,9 @@ class Params:
     z_strong: float = 3.0
     z_agree: float = 2.0
     ml_prob: float = 0.5
+    water_vv_db: float = -15.0   # open water is darker than this in VV…
+    water_vh_db: float = -22.0   # …and in VH
+    water_drop_db: float = 3.0   # and at least this much darker than before the event
     hand_water: float = 30.0
     hand_debris: float = 80.0
     max_slope: float = 35.0
@@ -149,12 +153,19 @@ def detect(terrain: dict, tracks: list[dict], s2pre: dict | None, s2post: dict |
     strong = np.zeros(shape, bool)
     agree = np.zeros(shape, "int16")
     sar_seen = np.zeros(shape, bool)
+    radar_water = np.zeros(shape, bool)
     for t in tracks:
         good = t["good"] & np.isfinite(t["z_vv"])
         zmax = np.maximum(np.abs(np.nan_to_num(t["z_vv"])), np.abs(np.nan_to_num(t["z_vh"])))
         strong |= good & (zmax >= p.z_strong)
         agree += (good & (zmax >= p.z_agree)).astype("int16")
         sar_seen |= good
+        if "post_vv" in t:
+            # open water mirrors the radar pulse away: very dark after, and much darker than before
+            dark = (np.nan_to_num(t["post_vv"], nan=0) <= p.water_vv_db) & (np.nan_to_num(t["post_vh"], nan=0) <= p.water_vh_db)
+            drop = (np.nan_to_num(t["d_vv"]) <= -p.water_drop_db) | (np.nan_to_num(t["d_vh"]) <= -p.water_drop_db)
+            radar_water |= good & dark & drop
+    ev["radar_water"] = radar_water
     # Optical outranks radar where it can see: farmland makes radar change noisy, so where Sentinel-2
     # saw the ground clearly before and after, radar change alone does not count.
     ev["radar_change"] = (strong | (agree >= 2)) & ~(ev["optical_seen"] & ~ev["optical_change"])
@@ -164,8 +175,8 @@ def detect(terrain: dict, tracks: list[dict], s2pre: dict | None, s2post: dict |
     ev["model_water"] = (np.nan_to_num(ml_flood_prob) >= p.ml_prob) if ml_flood_prob is not None else np.zeros(shape, bool)
 
     pixel_ha = res * res / 1e4
-    water = _clean((ev["model_water"] | ev["optical_water"]) & gate_water, pixel_ha, p)
-    changed = _clean((ev["optical_change"] | ev["radar_change"]) & gate_debris, pixel_ha, p)
+    water = _clean((ev["model_water"] | ev["optical_water"] | ev["radar_water"]) & gate_water, pixel_ha, p)
+    changed = _clean((ev["optical_change"] | ev["radar_change"]) & gate_debris & ~water, pixel_ha, p)
 
     # keep only zones connected to the main river corridor
     near_river = ndi.distance_transform_edt(hand > 1.0) * res <= p.corridor_m
