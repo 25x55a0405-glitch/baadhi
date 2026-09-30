@@ -1,0 +1,23 @@
+# Python 3.12. CPU is enough (no GPU needed). Install: pip install -r requirements.txt
+numpy
+scipy
+rasterio>=1.4
+shapely>=2.0
+pyproj
+networkx
+requests
+pystac-client
+planetary-computer
+scikit-image
+scikit-learn
+pillow
+matplotlib
+fastapi
+uvicorn[standard]
+tqdm
+onnx
+onnxruntime
+# Training only (CPU build: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu)
+torch
+torchvision
+segmentation-models-pytorch
