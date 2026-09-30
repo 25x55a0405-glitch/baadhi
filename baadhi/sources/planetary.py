@@ -10,13 +10,17 @@ the Himalaya: slopes facing the radar would otherwise look bright and slopes fac
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import planetary_computer as pc
 import pystac_client
 import rasterio
+import rasterio.errors
 from rasterio.enums import Resampling
 from rasterio.vrt import WarpedVRT
 
@@ -30,6 +34,9 @@ GDAL_ENV = dict(
     CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif,.tiff",
     GDAL_HTTP_MAX_RETRY="4",
     GDAL_HTTP_RETRY_DELAY="2",
+    GDAL_HTTP_TIMEOUT="60",          # never hang forever on a stalled connection
+    GDAL_HTTP_CONNECTTIMEOUT="20",
+    GDAL_HTTP_RETRY_CODES="429,500,502,503,504",
     VSI_CACHE="TRUE",
     GDAL_CACHEMAX=512,
 )
@@ -47,14 +54,44 @@ def search(collection: str, bbox, start: dt.date, end: dt.date, **query):
     return sorted(items, key=lambda i: i.datetime)
 
 
-def read_to_grid(href: str, grid: Grid, resampling=Resampling.bilinear, nodata=None, band: int = 1) -> np.ndarray:
-    """Read one band of a (remote) GeoTIFF, warped onto the analysis grid. Missing areas → NaN."""
+CACHE = Path(__file__).resolve().parents[2] / "data" / "cache" / "rasters"
+
+
+def _cache_key(href: str, grid: Grid, resampling, band: int, nodata=None) -> Path:
+    base = href.split("?")[0]  # drop the expiring access token
+    g = f"{grid.crs.to_epsg()}|{tuple(round(v, 3) for v in grid.transform[:6])}|{grid.shape}|{resampling}|{band}|{nodata}"
+    return CACHE / (hashlib.sha1(f"{base}|{g}".encode()).hexdigest()[:24] + ".npy")
+
+
+def _read_once(href: str, grid: Grid, resampling, nodata, band: int) -> np.ndarray:
     with rasterio.Env(**GDAL_ENV):
         with rasterio.open(href) as src:
             nd = src.nodata if nodata is None else nodata
             with WarpedVRT(src, crs=grid.crs, transform=grid.transform, width=grid.width, height=grid.height,
                            resampling=resampling, src_nodata=nd, nodata=np.nan, dtype="float32") as vrt:
                 return vrt.read(band, out_dtype="float32")
+
+
+def read_to_grid(href: str, grid: Grid, resampling=Resampling.bilinear, nodata=None, band: int = 1) -> np.ndarray:
+    """Read one band of a (remote) GeoTIFF, warped onto the analysis grid. Missing areas → NaN.
+
+    Results are cached on disk (keyed without the access token), and failed reads are retried with a
+    freshly signed URL — Planetary Computer's links expire, and long runs outlive them."""
+    path = _cache_key(href, grid, resampling, band, nodata)
+    if path.exists():
+        return np.load(path)
+    err = None
+    for attempt in range(4):
+        try:
+            url = href if attempt == 0 else pc.sign(href.split("?")[0])
+            arr = _read_once(url, grid, resampling, nodata, band)
+            CACHE.mkdir(parents=True, exist_ok=True)
+            np.save(path, arr)
+            return arr
+        except rasterio.errors.RasterioError as e:
+            err = e
+            time.sleep(3 * (attempt + 1))
+    raise RuntimeError(f"could not read {href.split('?')[0]} after 4 attempts: {err}")
 
 
 def mosaic(arrays: list[np.ndarray]) -> np.ndarray:
@@ -97,7 +134,11 @@ def read_s1(s1: S1Pass, grid: Grid, pols=("vv", "vh")) -> dict[str, np.ndarray]:
     """gamma0 (linear power) for each polarisation, mosaicked across the pass's frames."""
     out = {}
     for pol in pols:
-        out[pol] = mosaic([read_to_grid(it.assets[pol].href, grid, Resampling.bilinear, nodata=0) for it in s1.items if pol in it.assets])
+        # use each file's own no-data value (RTC uses -32768); backscatter power is always > 0
+        frames = [read_to_grid(it.assets[pol].href, grid, Resampling.bilinear) for it in s1.items if pol in it.assets]
+        for f in frames:
+            f[~(f > 0)] = np.nan
+        out[pol] = mosaic(frames)
     return out
 
 
