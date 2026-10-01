@@ -56,14 +56,25 @@ class Run:
 
 def _say(run: Run, progress: Progress | None, msg: str, frac: float):
     run.log.append((round(time.time(), 1), msg))
+    frac = max(frac, getattr(run, "_frac", 0.0))        # downloads finish in any order; the bar never goes back
+    run._frac = frac
     if progress:
         progress(msg, frac)
 
 
-# OpenStreetMap downloads run in their own pool: if the public server is slow, the flood map is delivered
-# anyway (after OSM_WAIT_S), while the download finishes in the background and is cached for a re-run.
-_OSM_POOL = ThreadPoolExecutor(4, thread_name_prefix="osm")
+# OpenStreetMap downloads run on their own daemon threads: if the public server is slow, the flood map is
+# delivered anyway (after OSM_WAIT_S), while the download finishes in the background and is cached for a re-run.
 OSM_WAIT_S = 600.0
+
+
+class NoDataError(RuntimeError):
+    """The area/date has no usable satellite image after the event: say so, don't draw an empty "no flood" map."""
+
+    @classmethod
+    def after(cls, event: dt.date):
+        return cls(f"No usable satellite image of this area was found after {event:%d %b %Y}. Sentinel-1 and Sentinel-2 "
+                   f"pass every few days and new images take a few days to appear — try a later flood date, and check "
+                   f"that the area is on land.")
 
 
 def _empty_layers() -> dict:
@@ -81,8 +92,8 @@ def analyse(bbox, event: dt.date, res: float = 10.0, out_dir: str | Path | None 
 
     with ThreadPoolExecutor(10) as ex:
         # everything that only waits on the network starts at once; nothing waits for the map download
-        f_pre = _OSM_POOL.submit(osm.fetch_pre_event, obox, event, deadline=max(30.0, osm_wait_s - 20.0),
-                                 say=lambda m: _say(run, progress, m, 0.1))
+        f_pre = osm.run_in_background(osm.fetch_pre_event, obox, event, deadline=max(30.0, osm_wait_s - 20.0),
+                                      say=lambda m: _say(run, progress, m, 0.1))
         f_s2 = ex.submit(optical.before_after, grid, event)
         f_dem = ex.submit(T.prefetch_dem, grid)
         try:
@@ -91,8 +102,28 @@ def analyse(bbox, event: dt.date, res: float = 10.0, out_dir: str | Path | None 
             stacks = []
             run.tracks.append(f"Sentinel-1 catalogue unavailable ({e})")
         f_loads = {st.track: ex.submit(sar.load_stack, st, grid) for st in stacks}
+        if not stacks:                                        # no radar at all: is there any optical image?
+            try:
+                _pre, _post = f_s2.result()
+            except Exception:  # noqa: BLE001
+                _post = None
+            if not _post:
+                raise NoDataError.after(event)
         _say(run, progress, f"Radar: {len(stacks)} Sentinel-1 track(s) with images before and after — downloading; "
                             f"OpenStreetMap before the event — one query", 0.05)
+        finished = [0]
+
+        def announce(label):
+            def cb(fut):
+                if fut.exception() is None:
+                    finished[0] += 1
+                    _say(run, progress, f"Downloaded: {label} ({time.time() - t0:.0f} s)", min(0.19, 0.05 + 0.025 * finished[0]))
+            return cb
+
+        f_s2.add_done_callback(announce("Sentinel-2 optical composites"))
+        f_dem.add_done_callback(announce("Copernicus DEM"))
+        for st in stacks:
+            f_loads[st.track].add_done_callback(announce(f"Sentinel-1 track {st.track} ({st.direction}, {len(st.pre) + 1} images)"))
         run.osm_snapshot = osm.snapshot_date(event).isoformat()
         ctx = None
         try:
@@ -139,6 +170,8 @@ def analyse(bbox, event: dt.date, res: float = 10.0, out_dir: str | Path | None 
         run.s2 = {k: v for k, v in (("before", pre), ("after", post)) if v}
         run.optical_dates = {"before": [str(d) for d in (pre or {}).get("dates", [])], "after": [str(d) for d in (post or {}).get("dates", [])]}
         _say(run, progress, "Optical: before/after views built", 0.7)
+        if not tracks and not post:
+            raise NoDataError.after(event)
 
 
     s2pre = optical.indices(pre) if pre else None

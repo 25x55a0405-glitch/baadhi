@@ -224,6 +224,7 @@ async function drawRun(j) {
 
   const ev = [];
   for (const t of s.tracks || []) ev.push(`Sentinel-1 ${esc(t)}`);
+  if (!(s.tracks || []).length) ev.push("Sentinel-1: no usable image for this area and date — map built from optical images only");
   const od = s.optical_dates || {};
   ev.push(`Sentinel-2 clear pixels — before: ${esc((od.before || []).join(", ") || "none")}; after: ${esc((od.after || []).join(", ") || "none")}`);
   ev.push(`AI flood model: ${esc(s.model || j.model || "not used for this run")}`);

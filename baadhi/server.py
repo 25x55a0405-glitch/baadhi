@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / "runs"
 WEB = ROOT / "web"
+from .pipeline import NoDataError  # noqa: E402
 from .runner import MODEL_PATH  # noqa: E402 — ONNX export if present, else the PyTorch weights
 MAX_KM2, MIN_KM2 = 600.0, 1.0
 FIRST_DATE = dt.date(2015, 1, 1)          # Sentinel-1/-2 era
@@ -140,7 +141,7 @@ def _work(job_id: str, req: RunRequest):
     except Exception as e:  # noqa: BLE001 — report any failure to the user instead of hanging
         out.mkdir(parents=True, exist_ok=True)
         (out / "error.txt").write_text(traceback.format_exc(), encoding="utf8")
-        job.update(status="error", error=f"{type(e).__name__}: {e}")
+        job.update(status="error", error=str(e) if isinstance(e, NoDataError) else f"{type(e).__name__}: {e}")
 
 
 _pdf_locks: dict[str, threading.Lock] = {}

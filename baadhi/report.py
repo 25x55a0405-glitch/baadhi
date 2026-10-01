@@ -100,7 +100,7 @@ th {{ color: #5a646b; font-weight: 600; }} h2 {{ font-size: 12px; margin: 10px 0
 <table><tr><th>Road</th><th>Blocked stretches</th><th>Under water/debris</th></tr>{road_rows or '<tr><td colspan=3>No road blocked in the analysed area.</td></tr>'}</table>
 <h2>Health facilities</h2><div>In or next to the footprint: {health_line}.</div>
 <h2>Data used</h2>
-<ul><li>Sentinel-1 radar: {tracks or '—'}</li>
+<ul><li>Sentinel-1 radar: {tracks or 'no usable image for this area and date — map built from optical images only'}</li>
 <li>Sentinel-2 optical (clear pixels): before {', '.join(od.get('before', [])) or '—'}; after {', '.join(od.get('after', [])) or '—'}</li>
 <li>AI flood model: {html.escape(run.model) if run.model else 'not used'}</li>
 <li>Copernicus DEM GLO-30 · OpenStreetMap as of {run.osm_snapshot} (before the event{', ' + html.escape(run.osm_source) if getattr(run, 'osm_source', '') else ''})</li>

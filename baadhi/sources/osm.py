@@ -321,47 +321,62 @@ def fetch_context(bbox, event: dt.date, km: float = 25.0) -> dict[str, dict]:
     return {f"context_{name}": fc for name, fc in fetch_many(CONTEXT_LAYERS, big, when).items()}
 
 
+def run_in_background(fn, *args, **kwargs):
+    """Like ThreadPoolExecutor.submit, but on a daemon thread: a request stuck on a slow public server must
+    never keep the process (a command-line run, the dashboard on Ctrl+C) from exiting."""
+    from concurrent.futures import Future
+    fut: Future = Future()
+
+    def work():
+        if not fut.set_running_or_notify_cancel():
+            return
+        try:
+            fut.set_result(fn(*args, **kwargs))
+        except BaseException as e:  # noqa: BLE001 — handed to whoever reads the future
+            fut.set_exception(e)
+
+    threading.Thread(target=work, daemon=True, name="osm-bg").start()
+    return fut
+
+
 def fetch_pre_event(bbox, event: dt.date, km: float = 25.0, patience: float = 60.0, deadline: float = 570.0, say=None) -> dict:
     """Pre-event OpenStreetMap for an area and its surroundings, from whichever source answers first.
 
     1. Overpass history ("attic") queries — the map exactly as it stood two days before the event.
     2. If they have not answered after `patience` seconds, Geofabrik's newest dated regional snapshot before
        the event is prepared in parallel (downloaded once, cut out locally); the first complete result wins.
-    Returns {"layers", "context", "source", "snapshot"}; raises if nothing is ready within `deadline` s."""
-    from concurrent.futures import ThreadPoolExecutor, wait
+    Returns {"layers", "context", "source", "snapshot"}; raises if nothing is ready within `deadline` s.
+    Slow downloads keep going on daemon threads and fill the disk cache for the next run."""
+    from concurrent.futures import wait
 
     from . import geofabrik
 
     when, big = snapshot_date(event), expand(bbox, km)
-    pool = ThreadPoolExecutor(3, thread_name_prefix="osm-src")
     t0 = time.time()
-    try:
-        f_area = pool.submit(fetch_many, LAYERS, bbox, when)
-        f_ctx = pool.submit(fetch_many, CONTEXT_LAYERS, big, when)
+    f_area = run_in_background(fetch_many, LAYERS, bbox, when)
+    f_ctx = run_in_background(fetch_many, CONTEXT_LAYERS, big, when)
 
-        def overpass():
-            if f_area.done() and f_ctx.done() and f_area.exception() is None and f_ctx.exception() is None:
-                return {"layers": f_area.result(), "context": {f"context_{k}": v for k, v in f_ctx.result().items()},
-                        "source": "Overpass history", "snapshot": when.isoformat()}
-            return None
+    def overpass():
+        if f_area.done() and f_ctx.done() and f_area.exception() is None and f_ctx.exception() is None:
+            return {"layers": f_area.result(), "context": {f"context_{k}": v for k, v in f_ctx.result().items()},
+                    "source": "Overpass history", "snapshot": when.isoformat()}
+        return None
 
-        wait([f_area, f_ctx], timeout=patience)
+    wait([f_area, f_ctx], timeout=patience)
+    if (got := overpass()) is not None:
+        return got
+    if say:
+        say("OpenStreetMap history server is slow — preparing a Geofabrik snapshot in parallel")
+    f_gf = run_in_background(geofabrik.fetch_layers, bbox, LAYERS, big, CONTEXT_LAYERS, when)
+    while time.time() - t0 < deadline:
         if (got := overpass()) is not None:
             return got
-        if say:
-            say("OpenStreetMap history server is slow — preparing a Geofabrik snapshot in parallel")
-        f_gf = pool.submit(geofabrik.fetch_layers, bbox, LAYERS, big, CONTEXT_LAYERS, when)
-        while time.time() - t0 < deadline:
-            if (got := overpass()) is not None:
-                return got
-            if f_gf.done() and f_gf.exception() is None:
-                area, ctx, snap, region = f_gf.result()
-                return {"layers": area, "context": {f"context_{k}": v for k, v in ctx.items()},
-                        "source": f"Geofabrik snapshot ({region})", "snapshot": snap.isoformat()}
-            if f_gf.done() and f_area.done() and f_ctx.done():
-                errs = [str(f.exception()) for f in (f_area, f_ctx, f_gf) if f.exception() is not None]
-                raise RuntimeError("no OpenStreetMap source: " + "; ".join(errs)[:300])
-            time.sleep(1.0)
-        raise TimeoutError("no OpenStreetMap source answered in time")
-    finally:
-        pool.shutdown(wait=False)       # a slow download keeps going in the background and fills the cache
+        if f_gf.done() and f_gf.exception() is None:
+            area, ctx, snap, region = f_gf.result()
+            return {"layers": area, "context": {f"context_{k}": v for k, v in ctx.items()},
+                    "source": f"Geofabrik snapshot ({region})", "snapshot": snap.isoformat()}
+        if f_gf.done() and f_area.done() and f_ctx.done():
+            errs = [str(f.exception()) for f in (f_area, f_ctx, f_gf) if f.exception() is not None]
+            raise RuntimeError("no OpenStreetMap source: " + "; ".join(errs)[:300])
+        time.sleep(1.0)
+    raise TimeoutError("no OpenStreetMap source answered in time")
