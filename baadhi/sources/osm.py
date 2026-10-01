@@ -22,7 +22,10 @@ import numpy as np
 import requests
 
 OHSOME = "https://api.ohsome.org/v1"
-OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
+# The three official instances all hold the full history ("attic") and have separate rate limits; when one is
+# overloaded the next is tried. (Mirrors without history would silently return today's map — never use those.)
+OVERPASS = ["https://overpass-api.de/api/interpreter", "https://lz4.overpass-api.de/api/interpreter",
+            "https://z.overpass-api.de/api/interpreter"]
 CACHE = Path(__file__).resolve().parents[2] / "data" / "cache" / "osm"
 UA = {"User-Agent": "Baadhi/0.1 (flood damage mapping research; github.com)", "Accept": "application/json"}
 
@@ -115,11 +118,10 @@ def _slot_wait(url: str) -> float:
 
 
 def _run_query(q: str, timeout: int) -> dict:
-    """Run an Overpass query on the main server, waiting politely for a free slot instead of hammering it;
-    the second server is a last resort only (it is often overloaded and very slow). A reply that reports a
-    runtime error (e.g. a timeout part-way) is rejected: partial map data would silently undercount."""
+    """Run an Overpass query, rotating over the official instances and waiting politely for a free slot instead
+    of hammering them. A reply that reports a runtime error (e.g. a timeout part-way) is rejected — partial map
+    data would silently undercount — and a server that never answers is not asked the same job again."""
     last = None
-    main, *spare = OVERPASS
 
     def ok(r):
         if r.status_code != 200:
@@ -131,27 +133,22 @@ def _run_query(q: str, timeout: int) -> dict:
         return data
 
     with _slots:
-        for attempt in range(8):
-            try:
-                r = requests.post(main, data={"data": q}, headers=UA, timeout=timeout + 30)
-                data = ok(r)
-                if data is not None:
-                    return data
-                last = f"{main} HTTP {r.status_code}"
-                if r.status_code not in (429, 503, 504):
-                    break
-            except requests.RequestException as ex:
-                last = f"{main} {type(ex).__name__}"
-            time.sleep(min(_slot_wait(main) or 3.0 * (attempt + 1), 60))
-        for url in spare:
+        for attempt in range(6):
+            url = OVERPASS[attempt % len(OVERPASS)]
             try:
                 r = requests.post(url, data={"data": q}, headers=UA, timeout=timeout + 30)
                 data = ok(r)
                 if data is not None:
                     return data
                 last = f"{url} HTTP {r.status_code}"
+                if r.status_code not in (429, 503, 504):
+                    break
+            except requests.ReadTimeout:
+                last = f"{url} gave no answer within {timeout + 30} s"
+                break
             except requests.RequestException as ex:
                 last = f"{url} {type(ex).__name__}"
+            time.sleep(min(_slot_wait(url) or 3.0 * (attempt + 1), 30))
     raise RuntimeError(f"Overpass failed: {last}")
 
 
@@ -165,7 +162,7 @@ def _via_overpass(layer: str, bbox, when: dt.date, timeout: int) -> dict:
     return _overpass_to_geojson(_run_query(q, timeout), layer)
 
 
-def _via_overpass_combined(layers, bbox, when: dt.date, timeout: int = 600) -> dict[str, dict]:
+def _via_overpass_combined(layers, bbox, when: dt.date, timeout: int = 480) -> dict[str, dict]:
     """Every layer in ONE attic query: the public server throttles per query, so one round trip is far
     faster than one per layer and tile. Each layer's elements are announced by a marker element."""
     b = _bbox_q(bbox)
@@ -281,7 +278,7 @@ def _tiled_cache_read(layer: str, bbox, when: dt.date) -> dict | None:
     return fetch_tiled(layer, bbox, when)
 
 
-def fetch_many(layers, bbox, when: dt.date, timeout: int = 600) -> dict[str, dict]:
+def fetch_many(layers, bbox, when: dt.date, timeout: int = 480) -> dict[str, dict]:
     """Several layers for one box: from disk if cached, else ONE combined query, else layer by layer."""
     out = {}
     for name in layers:

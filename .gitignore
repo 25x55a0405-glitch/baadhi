@@ -1,19 +1,20 @@
-# Python / tooling
-.venv/
-__pycache__/
-*.pyc
-.work/
-.pytest_cache/
 # Data is downloaded by the pipeline (large); reference maps are for checking only
+# Large model checkpoints (the small exported ONNX model is committed)
+# Python / tooling
+# Web build output and deps
+*.log
+*.pyc
+.DS_Store
+.env
+.pytest_cache/
+.venv/
+.work/
+__pycache__/
 data/
 experiments/out/
-# Web build output and deps
-web/node_modules/
-web/dist/
-# Large model checkpoints (the small exported ONNX model is committed)
 models/*.pt
 models/runs/
-.env
-*.log
-.DS_Store
 runs/
+video/
+web/dist/
+web/node_modules/

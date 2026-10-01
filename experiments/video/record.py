@@ -26,15 +26,18 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class Recorder:
-    def __init__(self, width: int = 1920, height: int = 1080, fps: int = 30):
-        self.w, self.h, self.fps = width, height, fps
+    def __init__(self, width: int = 1920, height: int = 1080, fps: int = 30, scale: float = 1.0):
+        """width x height = size of the video frames; the page itself is laid out at (width/scale) x (height/scale)
+        CSS pixels, so scale=1.5 gives a 1280x720 layout with 1.5x bigger text and controls in a 1080p video."""
+        self.w, self.h, self.fps, self.scale = width, height, fps, scale
+        cw, ch = int(round(width / scale)), int(round(height / scale))
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
             self.port = s.getsockname()[1]
         self.prof = ROOT / ".work" / f"chrome-rec-{self.port}"
         shutil.rmtree(self.prof, ignore_errors=True)
         self.proc = subprocess.Popen([CHROME, "--headless=new", "--enable-unsafe-swiftshader", "--use-angle=swiftshader",
-                                      f"--window-size={width},{height}", "--hide-scrollbars", "--force-device-scale-factor=1",
+                                      f"--window-size={cw},{ch}", "--hide-scrollbars", f"--force-device-scale-factor={scale}",
                                       f"--remote-debugging-port={self.port}", f"--user-data-dir={self.prof}", "about:blank"],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(80):
@@ -51,7 +54,7 @@ class Recorder:
         self.recording = False
         self.reader = threading.Thread(target=self._read, daemon=True)
         self.reader.start()
-        self.call("Emulation.setDeviceMetricsOverride", width=width, height=height, deviceScaleFactor=1, mobile=False)
+        self.call("Emulation.setDeviceMetricsOverride", width=cw, height=ch, deviceScaleFactor=scale, mobile=False)
         self.call("Page.enable")
 
     # ---------------------------------------------------------------- DevTools plumbing
@@ -93,6 +96,10 @@ class Recorder:
         r = self.call("Runtime.evaluate", expression=expr, awaitPromise=True, returnByValue=True)
         return r.get("result", {}).get("value")
 
+    def click_xy(self, x: float, y: float):
+        for typ in ("mouseMoved", "mousePressed", "mouseReleased"):
+            self.call("Input.dispatchMouseEvent", type=typ, x=x, y=y, button="left", clickCount=1)
+
     # ---------------------------------------------------------------- recording
     def open(self, url: str, ready: str = "window.baadhiMap && window.baadhiMap.loaded()", timeout: float = 90):
         self.call("Page.navigate", url=url)
@@ -126,30 +133,43 @@ class Recorder:
         except Exception:  # noqa: BLE001
             pass
 
-    def save_clip(self, out: Path, speed: float = 1.0, min_seconds: float = 0.0):
-        """Frames → constant-rate MP4; each frame is held until the next (real time ÷ speed)."""
+    def save_clip(self, out: Path, speed: float = 1.0, min_seconds: float = 0.0, segments=None):
+        """Frames -> constant-rate MP4: each frame is held until the next one (real time / speed).
+        `segments` = [(from_s, to_s, speed)], seconds since start(): parts played faster (e.g. a long wait).
+        The JPEG frames are streamed into ffmpeg through a pipe — no temporary image files (deleting
+        .jpg/.mp4 files from Python misbehaves on this machine)."""
         out = Path(out)
-        tmp = out.parent / f"{out.stem}_frames"
-        shutil.rmtree(tmp, ignore_errors=True)
-        tmp.mkdir(parents=True)
         frames = self.frames or []
         if not frames:
             raise RuntimeError("no frames recorded")
-        lines = []
+        t = self.t_start if segments else frames[0][0]
         end = max(self.t_end, frames[-1][0] + 0.1)
-        for k, (t, data) in enumerate(frames):
-            (tmp / f"{k:06d}.jpg").write_bytes(data)
-            nxt = frames[k + 1][0] if k + 1 < len(frames) else end
-            lines.append(f"file '{k:06d}.jpg'\nduration {max(nxt - t, 1 / self.fps) / speed:.4f}")
-        total = (end - frames[0][0]) / speed
-        if total < min_seconds:
-            lines[-1] = lines[-1].rsplit("duration", 1)[0] + f"duration {float(lines[-1].rsplit('duration', 1)[1]) + min_seconds - total:.4f}"
-        lines.append(f"file '{len(frames) - 1:06d}.jpg'")            # concat demuxer: repeat the last frame
-        (tmp / "list.txt").write_text("\n".join(lines), encoding="utf8")
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(tmp / "list.txt"),
-                        "-vf", f"fps={self.fps},scale={self.w}:{self.h}:flags=lanczos,format=yuv420p", "-c:v", "libx264",
-                        "-preset", "medium", "-crf", "18", str(out)], check=True)
-        shutil.rmtree(tmp, ignore_errors=True)
+
+        def speed_at(t_abs):
+            r = t_abs - self.t_start
+            for a, b, sp in segments or []:
+                if a <= r < b:
+                    return sp
+            return speed
+
+        ticks = []
+        while t < end:
+            ticks.append(t)
+            t += speed_at(t) / self.fps
+        while len(ticks) < int(round(min_seconds * self.fps)):
+            ticks.append(end)
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", str(self.fps), "-c:v", "mjpeg", "-i", "-",
+               "-vf", f"scale={self.w}:{self.h}:flags=lanczos,format=yuv420p", "-c:v", "libx264", "-preset", "medium",
+               "-crf", "18", "-r", str(self.fps), str(out)]
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        idx = 0
+        for tick in ticks:
+            while idx + 1 < len(frames) and frames[idx + 1][0] <= tick:
+                idx += 1
+            proc.stdin.write(frames[idx][1])
+        proc.stdin.close()
+        if proc.wait() != 0:
+            raise RuntimeError("ffmpeg failed to encode the clip")
         return out
 
     def screenshot(self, out: Path):
@@ -160,9 +180,11 @@ class Recorder:
             self.c.close()
         except Exception:  # noqa: BLE001
             pass
-        self.proc.kill()
+        # kill the whole tree (renderer, GPU and crashpad helpers outlive the main process)
+        subprocess.run(["taskkill", "/PID", str(self.proc.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       stdin=subprocess.DEVNULL)
         try:
             self.proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             pass
-        shutil.rmtree(self.prof, ignore_errors=True)
+        # the throw-away Chrome profile (.work/chrome-rec-*) is left for `rm -rf` from the shell
