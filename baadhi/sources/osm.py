@@ -336,7 +336,7 @@ def run_in_background(fn, *args, **kwargs):
     return fut
 
 
-def fetch_pre_event(bbox, event: dt.date, km: float = 25.0, patience: float = 60.0, deadline: float = 570.0, say=None) -> dict:
+def fetch_pre_event(bbox, event: dt.date, km: float = 25.0, patience: float = 150.0, deadline: float = 570.0, say=None) -> dict:
     """Pre-event OpenStreetMap for an area and its surroundings, from whichever source answers first.
 
     1. Overpass history ("attic") queries — the map exactly as it stood two days before the event.
@@ -364,16 +364,20 @@ def fetch_pre_event(bbox, event: dt.date, km: float = 25.0, patience: float = 60
         return got
     if say:
         say("OpenStreetMap history server is slow — preparing a Geofabrik snapshot in parallel")
-    f_gf = run_in_background(geofabrik.fetch_layers, bbox, LAYERS, big, CONTEXT_LAYERS, when)
-    while time.time() - t0 < deadline:
-        if (got := overpass()) is not None:
-            return got
-        if f_gf.done() and f_gf.exception() is None:
-            area, ctx, snap, region = f_gf.result()
-            return {"layers": area, "context": {f"context_{k}": v for k, v in ctx.items()},
-                    "source": f"Geofabrik snapshot ({region})", "snapshot": snap.isoformat()}
-        if f_gf.done() and f_area.done() and f_ctx.done():
-            errs = [str(f.exception()) for f in (f_area, f_ctx, f_gf) if f.exception() is not None]
-            raise RuntimeError("no OpenStreetMap source: " + "; ".join(errs)[:300])
-        time.sleep(1.0)
-    raise TimeoutError("no OpenStreetMap source answered in time")
+    cancel = threading.Event()
+    f_gf = run_in_background(geofabrik.fetch_layers, bbox, LAYERS, big, CONTEXT_LAYERS, when, cancel)
+    try:
+        while time.time() - t0 < deadline:
+            if (got := overpass()) is not None:
+                return got
+            if f_gf.done() and f_gf.exception() is None:
+                area, ctx, snap, region = f_gf.result()
+                return {"layers": area, "context": {f"context_{k}": v for k, v in ctx.items()},
+                        "source": f"Geofabrik snapshot ({region})", "snapshot": snap.isoformat()}
+            if f_gf.done() and f_area.done() and f_ctx.done():
+                errs = [str(f.exception()) for f in (f_area, f_ctx, f_gf) if f.exception() is not None]
+                raise RuntimeError("no OpenStreetMap source: " + "; ".join(errs)[:300])
+            time.sleep(1.0)
+        raise TimeoutError("no OpenStreetMap source answered in time")
+    finally:
+        cancel.set()          # whichever source lost stops downloading / scanning now

@@ -118,7 +118,16 @@ def choose_file(bbox, before: dt.date) -> tuple[str, dt.date, str]:
     raise RuntimeError("no Geofabrik region snapshot covers this area before the event")
 
 
-def _download(url: str) -> Path:
+class Cancelled(RuntimeError):
+    """The caller no longer needs this snapshot (another source answered first)."""
+
+
+def _check(cancel):
+    if cancel is not None and cancel.is_set():
+        raise Cancelled("snapshot no longer needed")
+
+
+def _download(url: str, cancel=None) -> Path:
     CACHE.mkdir(parents=True, exist_ok=True)
     path = CACHE / url.rsplit("/", 1)[1]
     if path.exists():
@@ -128,6 +137,7 @@ def _download(url: str) -> Path:
         r.raise_for_status()
         with open(part, "wb") as fh:
             for chunk in r.iter_content(1 << 20):
+                _check(cancel)
                 fh.write(chunk)
     part.replace(path)
     return path
@@ -146,7 +156,7 @@ def _geometry(kind: str, obj, layer: str):
     return {"type": "LineString", "coordinates": coords}
 
 
-def extract(pbf: Path, area_bbox, area_layers, ctx_bbox=None, ctx_layers=()) -> tuple[dict, dict]:
+def extract(pbf: Path, area_bbox, area_layers, ctx_bbox=None, ctx_layers=(), cancel=None) -> tuple[dict, dict]:
     """One pass over the region file: features of `area_layers` touching `area_bbox`, and of `ctx_layers`
     touching `ctx_bbox` (the wider routing context)."""
     import osmium
@@ -161,7 +171,11 @@ def extract(pbf: Path, area_bbox, area_layers, ctx_bbox=None, ctx_layers=()) -> 
     ctx = {name: [] for name in ctx_layers}
     outer = ctx_bbox or area_bbox
     fp = osmium.FileProcessor(str(pbf)).with_locations().with_filter(osmium.filter.KeyFilter(*KEYS))
+    seen = 0
     for obj in fp:
+        seen += 1
+        if not seen % 50000:
+            _check(cancel)
         if obj.is_node():
             kind = "node"
             if not obj.location.valid():
@@ -212,7 +226,7 @@ def extract(pbf: Path, area_bbox, area_layers, ctx_bbox=None, ctx_layers=()) -> 
     return {k: fc(v) for k, v in area.items()}, {k: fc(v) for k, v in ctx.items()}
 
 
-def fetch_layers(area_bbox, area_layers, ctx_bbox, ctx_layers, before: dt.date):
+def fetch_layers(area_bbox, area_layers, ctx_bbox, ctx_layers, before: dt.date, cancel=None):
     """Download (once) and cut out: returns (area layers, context layers, snapshot date, region name).
     The cut-out itself is cached too, so running the same area again is instant."""
     import hashlib
@@ -227,8 +241,8 @@ def fetch_layers(area_bbox, area_layers, ctx_bbox, ctx_layers, before: dt.date):
     if cached.exists():
         d = json.loads(cached.read_text(encoding="utf8"))
         return d["area"], d["ctx"], dt.date.fromisoformat(d["snapshot"]), d["region"]
-    pbf = _download(url)
-    area, ctx = extract(pbf, area_bbox, area_layers, ctx_bbox, ctx_layers)
+    pbf = _download(url, cancel)
+    area, ctx = extract(pbf, area_bbox, area_layers, ctx_bbox, ctx_layers, cancel)
     for d in (area, ctx):
         for fc in d.values():
             fc.update(snapshot=snap.isoformat(), source=f"geofabrik:{region}")

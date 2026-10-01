@@ -9,6 +9,8 @@ training. EMS maps are used only to score our results; that code is in `experime
 **How do you make sure OpenStreetMap is "before the event"?**
 We ask the Overpass API for the map *as it stood* at a moment in time ("attic" query). We use two days before the
 flood date at 00:00 UTC, because the Trishuli flood began on 25 August in UTC (22:00), which is 26 August in Nepal.
+If the public history servers are slow, we fall back to the newest dated Geofabrik regional snapshot from *before* the
+event (1st of recent months, 1 January of earlier years), cut out locally — the report names the source and its date.
 
 **Why Planetary Computer and not the Copernicus Data Space?**
 Same Sentinel data, no account needed, and it offers radar that is already terrain-corrected (RTC), which the
