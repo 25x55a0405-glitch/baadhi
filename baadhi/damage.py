@@ -32,6 +32,7 @@ class DamageResult:
     bridges: list = field(default_factory=list)
     health: list = field(default_factory=list)
     places: list = field(default_factory=list)
+    stretches: list = field(default_factory=list)   # the road stretches actually under water/debris (for maps)
     stats: dict = field(default_factory=dict)
 
 
@@ -85,25 +86,40 @@ def _lines(g):
     return []
 
 
-def roads_status(features: list, affected: np.ndarray, grid: Grid, step_m: float = 5.0, cut_m: float = 20.0):
+def roads_status(features: list, affected: np.ndarray, grid: Grid, step_m: float = 5.0, cut_m: float = 20.0,
+                 stretches: list | None = None, near_m: float = 20.0):
+    """Per road: cut (a continuous stretch ≥ cut_m under water/debris), touched (some of it under), near (within
+    near_m of the footprint — a bank road can be undercut, and a 10 m map cannot place the edge exactly), or outside.
+    If `stretches` is a list, the affected stretches themselves are appended to it as GeoJSON lines."""
     to_g = _to_grid_geom(grid)
+    to_ll = grid.to_lonlat().transform
+    near_mask = ndi.binary_dilation(affected, iterations=max(1, int(round(near_m / grid.res))))
     out = []
     for f in features:
         g = to_g(shape(f["geometry"]))
         length = g.length
-        if length == 0:
-            continue
-        in_len, longest = 0.0, 0.0
-        for line in _lines(g):
+        in_len, longest, close = 0.0, 0.0, False   # a zero-length way stays in the list: callers rely on the order
+        for line in (_lines(g) if length > 0 else []):
             n = max(int(line.length / step_m), 1)
             pts = [line.interpolate(i / n, normalized=True) for i in range(n + 1)]
-            hit = _sample(affected, grid, np.array([p.x for p in pts]), np.array([p.y for p in pts]))
+            xs, ys = np.array([p.x for p in pts]), np.array([p.y for p in pts])
+            hit = _sample(affected, grid, xs, ys)
+            close = close or bool(_sample(near_mask, grid, xs, ys).any())
             in_len += hit.sum() * line.length / (n + 1)
-            run = 0
-            for h in hit:  # longest continuous stretch under water/debris
+            run, seg = 0, []
+            for pt, h in zip(pts + [None], list(hit) + [False]):  # longest continuous stretch under water/debris
                 run = run + 1 if h else 0
                 longest = max(longest, run * line.length / (n + 1))
-        status = "cut" if longest >= cut_m else "touched" if in_len > 0 else OUTSIDE
+                if h:
+                    seg.append(pt)
+                elif seg:
+                    if stretches is not None and len(seg) >= 2:
+                        stretches.append({"type": "Feature", "geometry": {"type": "LineString", "coordinates": [list(to_ll(q.x, q.y)) for q in seg]},
+                                          "properties": {"highway": f["properties"].get("highway"), "ref": f["properties"].get("ref"),
+                                                         "name": f["properties"].get("name:en") or f["properties"].get("name"),
+                                                         "length_m": round(len(seg) * line.length / (n + 1)), "blocks": len(seg) * line.length / (n + 1) >= cut_m}})
+                    seg = []
+        status = "cut" if longest >= cut_m else "touched" if in_len > 0 else "near" if close else OUTSIDE
         out.append({"type": "Feature", "geometry": f["geometry"],
                     "properties": {**f["properties"], "status": status, "length_m": round(length), "affected_m": round(in_len)}})
     return out
@@ -140,15 +156,16 @@ def assess(cls: np.ndarray, grid: Grid, osm_layers: dict) -> DamageResult:
     affected = cls > 0
     r = DamageResult()
     r.buildings = buildings_status(osm_layers.get("buildings", {}).get("features", []), affected, grid)
-    r.roads = roads_status(osm_layers.get("roads", {}).get("features", []), affected, grid)
+    r.roads = roads_status(osm_layers.get("roads", {}).get("features", []), affected, grid, stretches=r.stretches)
     r.bridges = bridges_status(osm_layers.get("bridges", {}).get("features", []), affected, grid)
     r.health = points_status(osm_layers.get("health", {}).get("features", []), affected, grid)
     r.places = points_status(osm_layers.get("places", {}).get("features", []), affected, grid)
     count = lambda feats, s: sum(1 for f in feats if f["properties"]["status"] == s)  # noqa: E731
-    road_km = lambda s: sum(f["properties"]["length_m"] for f in r.roads if f["properties"]["status"] == s) / 1000  # noqa: E731
     r.stats = {
         "buildings_hit": count(r.buildings, HIT), "buildings_possibly_hit": count(r.buildings, POSSIBLE), "buildings_total": len(r.buildings),
-        "roads_cut": count(r.roads, "cut"), "roads_cut_km": round(road_km("cut"), 2),
+        # km of road actually under water/debris: where it blocks the road ("cut") / anywhere ("affected")
+        "roads_cut": count(r.roads, "cut"),
+        "roads_blocked_km": round(sum(f["properties"]["affected_m"] for f in r.roads if f["properties"]["status"] == "cut") / 1000, 2),
         "roads_affected_km": round(sum(f["properties"]["affected_m"] for f in r.roads) / 1000, 2),
         "bridges_at_risk": count(r.bridges, "at risk"), "bridges_total": len(r.bridges),
         "health_hit": count(r.health, HIT), "health_near": count(r.health, POSSIBLE), "health_total": len(r.health),

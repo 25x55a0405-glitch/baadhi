@@ -5,6 +5,7 @@ rasterio>=1.4
 shapely>=2.0
 pyproj
 networkx
+pysheds
 requests
 pystac-client
 planetary-computer
@@ -15,9 +16,11 @@ matplotlib
 fastapi
 uvicorn[standard]
 tqdm
-onnx
-onnxruntime
-# Training only (CPU build: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu)
+onnxruntime          # runs the flood model (models/flood_model.onnx)
+osmium               # cuts a pre-event area out of a Geofabrik snapshot when Overpass is slow
+# Training / re-exporting the model only — the dashboard runs without these
+# (CPU build: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu)
 torch
 torchvision
 segmentation-models-pytorch
+onnx

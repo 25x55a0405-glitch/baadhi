@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Baadhi — Mapping flood damage from space (report)</title>
+<style>
+@page { size: A4; margin: 15mm 15mm 14mm; }
+:root { --ink: #15191c; --ink2: #3c454b; --muted: #69747b; --rule: #d9d3c8; --water: #256fd9; --debris: #d67820; --cut: #c0392b; }
+* { box-sizing: border-box; }
+body { font: 9.6pt/1.42 "Segoe UI", "IBM Plex Sans", system-ui, sans-serif; color: var(--ink); margin: 0; }
+h1 { font: 700 20pt/1.1 Georgia, "Fraunces", serif; margin: 0 0 3pt; letter-spacing: -0.01em; }
+h2 { font: 700 12pt/1.2 Georgia, serif; margin: 13pt 0 4pt; border-bottom: 1.2pt solid var(--ink); padding-bottom: 2pt; }
+h3 { font-size: 10pt; margin: 8pt 0 2pt; }
+p { margin: 0 0 5pt; }
+.sub { color: var(--muted); margin-bottom: 8pt; }
+.abstract { border-left: 3pt solid var(--water); padding: 5pt 9pt; background: #f6f4ef; margin: 8pt 0; }
+table { border-collapse: collapse; width: 100%; margin: 4pt 0 6pt; font-size: 8.6pt; }
+th, td { border-bottom: 0.6pt solid var(--rule); padding: 2.6pt 4pt; text-align: left; vertical-align: top; }
+th { color: var(--muted); font-weight: 600; border-bottom: 1pt solid var(--ink); }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hl { font-weight: 700; }
+figure { margin: 6pt 0 8pt; break-inside: avoid; }
+figure img { width: 100%; border: 0.6pt solid var(--rule); }
+figcaption { font-size: 8.2pt; color: var(--ink2); margin-top: 2pt; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; }
+ul { margin: 2pt 0 6pt 14pt; padding: 0; }
+li { margin-bottom: 2pt; }
+.small { font-size: 8pt; color: var(--muted); }
+.tag { display: inline-block; font-size: 7.5pt; border: 0.6pt solid var(--rule); border-radius: 3pt; padding: 0 4pt; color: var(--ink2); }
+.pb { break-before: page; }
+h2, h3 { break-after: avoid; }
+table.wide td:first-child { width: 27%; }
+tr { break-inside: avoid; }
+code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.4pt; }
+</style>
+</head>
+<body>
+
+<h1>Baadhi — mapping flood damage from space</h1>
+<div class="sub">IIT Mandi Multimodal AI Hackathon 2026 · Track B · Case study: Trishuli glacial-lake outburst flood, 26 August 2026 (Copernicus EMSR927)</div>
+
+<div class="abstract">
+Given any area and a flood date, Baadhi builds a map of flood water and debris from Sentinel-1 radar and
+Sentinel-2 optical images, counts the buildings, roads and bridges in its path on the pre-event
+OpenStreetMap, and finds the settlements that lost their road link to a hospital or town — from raw
+data, in about 3–5 minutes on a laptop — and writes a one-page situation report. Its AI component is a
+flood segmentation network trained from scratch on Kuro Siwo; on live Sentinel-1 scenes of the 2025
+Punjab floods it reaches a mean flood F1 of <b>0.80</b> against 0.52 for a radar threshold rule. On the
+Trishuli case study the flood/debris map agrees with the Copernicus EMS delineation at F1 0.89 (development
+areas) and <b>0.86 on the held-out area</b>.
+</div>
+
+<h2>1 · Problem and what the system answers</h2>
+<p>A glacial-lake outburst or monsoon flood destroys roads and bridges in narrow valleys within hours; responders
+need to know <b>where</b> the water and debris went, <b>what</b> it hit, and <b>who</b> is now cut off from care. The
+system must do this for an area and date chosen live by the judges, using only open satellite data and the map
+as it was before the event.</p>
+<table>
+<tr><th>Question</th><th>Evidence</th><th>Output</th></tr>
+<tr><td>Where did flood and debris hit?</td><td>Sentinel-1 before/after on every usable orbit track; Sentinel-2 when clear; flood model; DEM terrain rules</td><td>classes <i>flood water · debris/mud/scoured ground · affected channel</i>, confidence</td></tr>
+<tr><td>What was damaged?</td><td>overlay on OpenStreetMap at <i>event − 2 days, 00:00 UTC</i></td><td>buildings hit / at the edge, blocked road stretches, bridges over an affected reach, health facilities</td></tr>
+<tr><td>Who is cut off?</td><td>road graph before vs after (network 25 km beyond the area), walking paths separately</td><td>per settlement: minutes to the nearest hospital/clinic and town, before and after</td></tr>
+<tr><td>Bonus: where would a flood go?</td><td>steepest descent on Copernicus DEM, continued across windows</td><td>path and settlements, km downstream, height above the river</td></tr>
+</table>
+
+<h2>2 · Data and the rules we keep</h2>
+<p>Inputs: Sentinel-1 RTC (γ⁰), Sentinel-2 L2A and Copernicus DEM GLO-30/90 from Microsoft Planetary Computer; OpenStreetMap
+as it was before the event (Overpass "attic" query, two days before the event date at 00:00 UTC — EMSR927 began on
+25 Aug 22:00 UTC); Kuro Siwo for training only. <b>Copernicus EMS, UNOSAT and other published flood maps are never
+inputs</b>: EMSR927 and EMSR838 are used only to score results, in code under <code>experiments/</code> that the system never
+imports. No detector threshold was fitted to EMS maps (section 7).</p>
+
+<h2>3 · Method</h2>
+<h3>3.1 Flood and debris map</h3>
+<ul>
+<li><b>Radar change</b> — for each track, up to three before-images and the first after-image; 3×3 multilook; log-ratio
+divided by each pixel's own pass-to-pass variability (z ≥ 3, or two tracks ≥ 2). Layover, shadow and strong
+foreshortening are masked per track from the DEM and the satellite's heading and incidence.</li>
+<li><b>Radar water</b> — very dark after (VV ≤ −15 dB, VH ≤ −22 dB) and ≥ 3 dB darker than before.</li>
+<li><b>Optical</b> — clear pixels only (scene-classification mask), per-date clear-fraction selection, first-clear-pixel composites:
+vegetation stripped (NDVI −0.20), fresh sediment (bare-soil or brightness rise with NDVI loss), new water (MNDWI). Where
+Sentinel-2 saw the ground clearly and unchanged, radar change alone does not count (farmland harvests make radar noisy).</li>
+<li><b>Terrain</b> — height above the main river (HAND, pysheds on the DEM with OSM rivers burned in) and slope gate what
+can be water (≤ 30 m) or debris (≤ 80 m; steep scoured banks allowed within 60 m of the river). Zones must connect to the
+river corridor; valley floor below the observed flood level is filled where clouds or radar shadow hid the ground.</li>
+<li><b>Flood model</b> — water the network finds (probability ≥ 0.5) enters directly and is not forced to touch the corridor
+(on plains, flood water breaks into patches between dry fields).</li>
+</ul>
+
+<h3>3.2 AI component: flood segmentation model</h3>
+<p>U-Net with a ResNet-18 encoder (12.5 M parameters), <b>trained from scratch</b> on Kuro Siwo only — no ImageNet weights, so
+no data outside the allowed lists — on a laptop CPU. Input: 8 channels (VV and VH after and before, their differences,
+slope, height above the local valley floor); output: no water / permanent water / flood water. Official Kuro Siwo event
+splits: 23 training events, 11 validation events (four training events from different climates moved to validation),
+<b>official test events never seen</b> (including Nepal, 1111007). Loss: weighted cross-entropy + Dice on flood; random crops,
+rotations, flips, independent calibration offsets on the before/after images; weight averaging (EMA).</p>
+<p><b>Making live data look like the training data.</b> Kuro Siwo is σ⁰ with a Lee filter; Planetary Computer gives
+terrain-flattened γ⁰ without filtering. Live images are converted (σ⁰ ≈ γ⁰·cos θ, incidence from the swath geometry)
+and Lee-filtered, then the <i>same</i> feature code as in training runs (<code>baadhi/ml/features.py</code>). Inference uses
+512-pixel windows blended at the seams, averaged with the mirror image; per pixel, the highest probability among tracks
+that see it properly. The model is exported to ONNX and run with onnxruntime (identical output, 1.6× faster than PyTorch;
+the dashboard does not need PyTorch).</p>
+
+<h3>3.3 Damage, access and flood path</h3>
+<p>Buildings are rasterised on the 10 m grid: ≥ 50 % inside the footprint = <i>hit</i>, touching it = <i>at the edge</i>. A road is
+<i>blocked</i> where ≥ 20 m of it runs continuously under water or debris; bridges within 30 m of an affected reach are
+<i>at risk</i>. Access: an undirected road graph with class speeds (trunk 50 km/h … track 12 km/h), multi-source Dijkstra from all
+hospitals/clinics and towns (including those up to 25 km outside the area) before and after removing blocked stretches and
+at-risk bridges; a settlement is <i>cut off</i> if it loses its route, a <i>long detour</i> if the time doubles and grows ≥ 30 min.
+Footpaths are walked at 3 km/h to tell whether a cut-off village can still be reached on foot.
+The flood path follows D8 directions on GLO-90 and lists named places ≤ 400 m from the path and ≤ 60 m above the river.</p>
+
+<h2>4 · Results — Trishuli GLOF vs Copernicus EMSR927</h2>
+<p>EMSR927 areas 1–3 were used while developing the detector; <b>area 5 (Phosretar) was held out and evaluated once</b>.
+Scores are computed inside each EMS area of interest, excluding what EMS marked "not analysed".</p>
+<table class="wide">
+<tr><th>Area</th><th class="n">Precision</th><th class="n">Recall</th><th class="n">F1</th><th class="n">IoU</th><th class="n">EMS damaged buildings we flag</th><th class="n">Damaged road length in footprint</th><th class="n">Damaged bridges flagged / in OSM</th></tr>
+<tr><td>AOI 1–2 Syabru Bensi–Timure <span class="tag">dev</span></td><td class="n">0.99</td><td class="n">0.81</td><td class="n">0.89</td><td class="n">0.81</td><td class="n">95 %</td><td class="n">85 %</td><td class="n">5 / 5</td></tr>
+<tr><td>AOI 3 Bidur <span class="tag">dev</span></td><td class="n">0.97</td><td class="n">0.88</td><td class="n">0.92</td><td class="n">0.85</td><td class="n">94 %</td><td class="n">84 %</td><td class="n">20 / 20</td></tr>
+<tr class="hl"><td>AOI 5 Phosretar <span class="tag">held out</span></td><td class="n">0.97</td><td class="n">0.77</td><td class="n">0.86</td><td class="n">0.75</td><td class="n">63 %</td><td class="n">55 %</td><td class="n">24 / 30</td></tr>
+</table>
+<figure><img src="img/agreement_phosretar.png" alt="Agreement map for the held-out Phosretar area">
+<figcaption><b>Figure 1.</b> Held-out area: green = both Baadhi and EMS, orange = Baadhi only, purple = EMS only. The missed ground was seen clearly
+by Sentinel-2 (100 %) and by radar (99 %); it lies higher on the banks — median 11 m above the river on 16° slopes, against
+3 m and 3° where both agree — where the flood's upper trace left little change visible at 10 m.</figcaption></figure>
+<p>Buildings: in the upper valley EMS graded 760 buildings damaged or destroyed; 95 % of them lie in or at the edge of our
+footprint. "Precision" of building flags (our hit buildings with an EMS-graded point within 15 m) is 84 % upper, 86 % Bidur,
+65 % Phosretar. <b>Access:</b> in the upper valley 22 settlements lose their road link to the nearest hospital or town — Syabru
+Bensi had a clinic 24 minutes away before the event and none by road after.</p>
+<p><b>Checking the cut-off analysis.</b> The same routing was run twice on the same pre-event road network: once with roads cut by
+<i>our</i> footprint, once with roads cut where <i>EMS</i> graded them destroyed or damaged (both limited to the EMS areas). Every
+settlement's status (cut off / long detour / connected) was compared:</p>
+<table>
+<tr><th>Area</th><th class="n">Same status</th><th class="n">Cut off: ours / EMS-based</th></tr>
+<tr><td>AOI 1–2 Syabru Bensi–Timure <span class="tag">dev</span></td><td class="n">34 / 34 (100 %)</td><td class="n">26 / 26</td></tr>
+<tr><td>AOI 3 Bidur <span class="tag">dev</span></td><td class="n">119 / 119 (100 %)</td><td class="n">5 / 5 (and 36 / 36 long detours)</td></tr>
+<tr class="hl"><td>AOI 5 Phosretar <span class="tag">held out</span></td><td class="n">167 / 182 (92 %)</td><td class="n">4 / 17 (3 in both)</td></tr>
+</table>
+<p>In the held-out area our list is conservative: 45 % of the road length EMS graded damaged lies outside our footprint (the bank-top
+misses of Figure 1), and 14 settlements behind those roads stay "connected" in our analysis.</p>
+
+<h2>5 · Results — the flood model on data it never saw</h2>
+<div class="two">
+<div>
+<p><b>Live Sentinel-1, EMSR838 Punjab floods (Aug 2025).</b> For each EMS area we take the ~14 km box with the most mapped
+flooding, use exactly the Sentinel-1 pass EMS mapped from, before-images from before the flood began, and score inside
+the EMS area only.</p>
+<table>
+<tr><th>EMSR838 area</th><th class="n">EMS flood</th><th class="n">Rule F1</th><th class="n">Model F1</th></tr>
+<tr><td>AOI01 Rasoo Nagar</td><td class="n">143 km²</td><td class="n">0.63</td><td class="n hl">0.95</td></tr>
+<tr><td>AOI02 Sharaqpur</td><td class="n">65 km²</td><td class="n">0.31</td><td class="n hl">0.91</td></tr>
+<tr><td>AOI04 Najabat</td><td class="n">26 km²</td><td class="n">0.85</td><td class="n hl">0.90</td></tr>
+<tr><td>AOI05 Trimmu</td><td class="n">9 km²</td><td class="n">0.30</td><td class="n hl">0.46</td></tr>
+<tr class="hl"><td>Mean</td><td></td><td class="n">0.52</td><td class="n">0.80</td></tr>
+</table>
+<p class="small">Trimmu is a braided river: 317 flood patches with a median of 80 m², many at the scale of a pixel; the monsoon
+before-images already held water in many braids, which the model then calls permanent rather than new flood water.</p>
+</div>
+<div>
+<figure><img src="img/model_vs_rule.png" alt="Model vs rule F1">
+<figcaption><b>Figure 2.</b> Flood F1 of the model and of the radar threshold rule on scenes never used in training.</figcaption></figure>
+<p><b>Kuro Siwo official test events</b> <span class="small">[final model: pending]</span>. Early checkpoint: Nepal (1111007, Koshi plains)
+F1 0.76 vs 0.63 for the rule.</p>
+</div>
+</div>
+
+<h2>6 · Dashboard, report and speed</h2>
+<p>The dashboard (FastAPI + MapLibre, <code>python serve.py</code>) takes an area drawn on the map and a date, streams progress,
+and shows the classes, confidence and model probability, Sentinel-2 before/after and a radar change composite, buildings,
+blocked roads, bridges, health facilities and settlements by access status; clicking a settlement shows its travel times.
+Each run produces the one-page situation report (HTML/PDF, every number from the maps), GeoTIFFs and GeoJSON layers.
+A 150–200 km² Himalayan valley runs end to end in about 3–5 minutes on a 10-core laptop CPU without a GPU; downloads
+dominate. <span class="small">[cold-run timings of the practice events: pending]</span></p>
+
+<h2>7 · Limitations and honesty</h2>
+<ul>
+<li><b>Revisit gaps:</b> 6–12 days per track; water that drained before the first pass after the event is not seen; nothing is predicted in advance.</li>
+<li><b>Radar blind spots</b> on steep slopes facing towards/away from the satellite; optical images need clear sky (rare in the monsoon).</li>
+<li><b>"Hit" is not "destroyed":</b> at 10 m a building inside the footprint may stand; EMS grades damage from very-high-resolution imagery.</li>
+<li><b>OpenStreetMap completeness:</b> unmapped buildings, bridges and villages are not counted — 9 of the 39 bridges EMS graded at Phosretar are not in OSM.</li>
+<li><b>Travel times</b> use typical class speeds; roads outside the analysed area are assumed passable.</li>
+<li><b>Where things were tuned:</b> detector thresholds are physical and fixed; they were checked on EMSR927 areas 1–3 (development), area 5 was
+evaluated once. On EMSR838 the model alone is an independent test; two plains rules were added after inspecting AOI01 (model water need
+not touch the river corridor; unknown height-above-river accepted on flat ground), so the combined detector's EMSR838 scores are a development check.</li>
+<li><b>Kuro Siwo's Nepal event lies in the Koshi plains</b>; mountain performance is shown by the EMSR927 case study.</li>
+<li>Educational prototype, not an operational tool. No images of victims are used.</li>
+</ul>
+
+<h2>Attribution</h2>
+<p class="small">Contains modified Copernicus Sentinel data 2025–2026, processed by Microsoft Planetary Computer. Copernicus DEM: produced using
+Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018 provided under COPERNICUS by the European Union
+and ESA; all rights reserved. © OpenStreetMap contributors (ODbL), pre-event snapshots via the Overpass API. Kuro Siwo — N. I. Bountos et
+al., NeurIPS 2024 Datasets and Benchmarks (CC BY 4.0). Checking only: Copernicus Emergency Management Service © European Union
+(EMSR927, EMSR838). Basemap © OpenFreeMap © OpenMapTiles. MapLibre GL JS (BSD-3-Clause).</p>
+
+</body>
+</html>

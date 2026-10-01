@@ -49,6 +49,7 @@ class Params:
     hand_water: float = 30.0
     hand_debris: float = 80.0
     max_slope: float = 35.0
+    flat_slope: float = 5.0      # "flat ground" where height above the river is unknown
     bank_hand: float = 60.0      # steep banks this close above the river can be scoured/undercut
     bank_slope: float = 60.0
     min_blob_ha: float = 0.3
@@ -126,7 +127,10 @@ def detect(terrain: dict, tracks: list[dict], s2pre: dict | None, s2post: dict |
     slope = np.nan_to_num(terrain["slope"], nan=90)
     # Debris flows scour and undercut the banks of a gorge, so steep ground is allowed close to the river
     gate_debris = (hand <= p.hand_debris) & ((slope <= p.max_slope) | ((hand <= p.bank_hand) & (slope <= p.bank_slope)))
-    gate_water = (hand <= p.hand_water) & (slope <= p.max_slope)
+    # Height above the river can be unknown (on wide plains the flow never reaches a major river inside
+    # the analysis window); water pools on flat ground, so there flatness alone lets water through.
+    hand_unknown = ~np.isfinite(terrain["hand_major"])
+    gate_water = ((hand <= p.hand_water) | (hand_unknown & (slope <= p.flat_slope))) & (slope <= p.max_slope)
 
     ev = {}
     # ---- optical
@@ -178,7 +182,10 @@ def detect(terrain: dict, tracks: list[dict], s2pre: dict | None, s2post: dict |
     water = _clean((ev["model_water"] | ev["optical_water"] | ev["radar_water"]) & gate_water, pixel_ha, p)
     changed = _clean((ev["optical_change"] | ev["radar_change"]) & gate_debris & ~water, pixel_ha, p)
 
-    # keep only zones connected to the main river corridor
+    # keep only zones connected to the main river corridor (flash floods and debris flows run down rivers).
+    # Water the trained model found stands on its own: on a plain, flood water breaks into many patches
+    # between dry fields, and the model was validated on unseen events — the corridor rule is there to
+    # suppress noisy rule-based evidence, not a learned water detector.
     near_river = ndi.distance_transform_edt(hand > 1.0) * res <= p.corridor_m
     lab, n = ndi.label(water | changed)
     if n:
@@ -186,7 +193,11 @@ def detect(terrain: dict, tracks: list[dict], s2pre: dict | None, s2post: dict |
         touches[np.unique(lab[near_river & (lab > 0)])] = True
         touches[0] = False
         keep = touches[lab]
-        water &= keep
+        wl, wn = ndi.label(water)
+        by_model = np.zeros(wn + 1, bool)
+        by_model[np.unique(wl[ev["model_water"] & (wl > 0)])] = True
+        by_model[0] = False
+        water &= keep | by_model[wl]
         changed &= keep
 
     # terrain completion: valley floor below the observed flood level, hidden from the satellites

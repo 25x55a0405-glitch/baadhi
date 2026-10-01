@@ -11,9 +11,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from .features import N_CHANNELS
-
-CLASSES = ("no_water", "permanent_water", "flood")
+from .features import CLASSES, N_CHANNELS  # noqa: F401 — CLASSES re-exported for the trainer
 
 
 class ResBlock(nn.Module):

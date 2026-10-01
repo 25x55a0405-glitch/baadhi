@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.spatial import cKDTree
-from shapely.geometry import shape
+from shapely.geometry import Point, shape
 from shapely.ops import transform as shp_transform, unary_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -88,6 +88,8 @@ bad_len = sum(x.length for x in bad)
 covered = 0.0
 for line in bad:
     for seg in getattr(line, "geoms", [line]):
+        if seg.is_empty or seg.length == 0 or seg.geom_type != "LineString":
+            continue
         n = max(int(seg.length / 5), 1)
         ps = np.array([(seg.interpolate(i / n, normalized=True).x, seg.interpolate(i / n, normalized=True).y) for i in range(n + 1)])
         covered += in_affected(ps).mean() * seg.length
@@ -97,5 +99,10 @@ print(f"  roads: EMS destroyed/damaged length in AOI {bad_len/1000:.1f} km, of w
 ems_br = [f for a in aois for lay in ("transportationP", "transportationL") for f in R.layer(a, lay) if "Bridge" in str(f["properties"].get("obj_type"))]
 br_bad = pts(ems_br, {"Destroyed", "Damaged"})
 ours_br = [g(shape(f["geometry"])) for f in dmg.bridges if f["properties"]["status"] == "at risk"]
-ours_br_xy = np.array([(b.representative_point().x, b.representative_point().y) for b in ours_br if domain.contains(b.representative_point())]) if ours_br else np.zeros((0, 2))
-print(f"  bridges: EMS destroyed/damaged in AOI {len(br_bad)} | ours 'at risk' in AOI {len(ours_br_xy)} | EMS bridges matched by ours (≤ 50 m): {near(br_bad, ours_br_xy, 50).mean() if len(br_bad) else float('nan'):.0%}")
+all_br = [g(shape(f["geometry"])) for f in dmg.bridges]
+# distance to the bridge LINE (a long bridge's midpoint can be far from where EMS put its point)
+hit = [any(b.distance(p) <= 25 for b in ours_br) for p in (Point(xy) for xy in br_bad)]
+in_osm = [any(b.distance(p) <= 25 for b in all_br) for p in (Point(xy) for xy in br_bad)]
+print(f"  bridges: EMS destroyed/damaged in AOI {len(br_bad)} | in pre-event OSM (≤ 25 m) {sum(in_osm)} | "
+      f"flagged 'at risk' by us (bridge line ≤ 25 m) {sum(hit)} = {np.mean(hit) if hit else float('nan'):.0%} "
+      f"({sum(hit)}/{max(sum(in_osm), 1)} = {sum(hit) / max(sum(in_osm), 1):.0%} of those OSM knows)")

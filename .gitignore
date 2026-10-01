@@ -16,3 +16,4 @@ models/runs/
 .env
 *.log
 .DS_Store
+runs/

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baadhi — flood damage from space</title>
+<meta name="description" content="Pick an area and a flood date: Baadhi maps flood water and debris from Sentinel-1/2, counts damaged buildings, roads and bridges, and finds settlements cut off from hospitals.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2315191c'/%3E%3Cpath d='M5 19c3.5 0 3.5-3 7-3s3.5 3 7 3 3.5-3 7-3' stroke='%23256fd9' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Cpath d='M5 25c3.5 0 3.5-3 7-3s3.5 3 7 3 3.5-3 7-3' stroke='%23d67820' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/vendor/maplibre-gl.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="panel" id="panel">
+    <header class="mast">
+      <div class="wordmark"><span class="wm">Baadhi</span><span class="wm-ne" lang="ne">बाढी</span></div>
+      <p class="tag">Flood &amp; debris damage from space — Sentinel-1 radar, Sentinel-2 optical, Copernicus DEM and pre-event OpenStreetMap.</p>
+    </header>
+
+    <!-- 1 · new analysis -->
+    <section class="card" id="form-card">
+      <h2 class="kicker">New analysis</h2>
+      <div class="field">
+        <div class="label-row"><label>Area</label><span class="hint" id="area-size">—</span></div>
+        <div class="area-row">
+          <button type="button" class="btn ghost" id="draw-btn" aria-pressed="false">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3.5" y="4.5" width="13" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.6 2"/></svg>
+            Draw on map</button>
+          <input id="bbox" class="mono" spellcheck="false" placeholder="west, south, east, north" aria-label="Area as west, south, east, north in degrees">
+        </div>
+      </div>
+      <div class="field two">
+        <div><label for="date">Flood date</label><input type="date" id="date"></div>
+        <div><label for="name">Name <span class="opt">optional</span></label><input id="name" maxlength="120" placeholder="auto from map"></div>
+      </div>
+      <button class="btn primary" id="run-btn" disabled>Analyse this area</button>
+      <p class="fine" id="form-msg" role="status"></p>
+      <div class="presets" id="presets"></div>
+    </section>
+
+    <!-- 2 · progress -->
+    <section class="card hidden" id="progress-card" aria-live="polite">
+      <div class="label-row"><h2 class="kicker">Working</h2><span class="mono hint" id="elapsed">0 s</span></div>
+      <div class="bar"><i id="bar"></i></div>
+      <ol class="steps" id="steps"></ol>
+    </section>
+
+    <!-- 3 · results -->
+    <section class="hidden" id="results">
+      <div class="res-head">
+        <h1 id="res-title">—</h1>
+        <p class="sub" id="res-sub">—</p>
+        <p class="note hidden" id="osm-note" role="status"></p>
+      </div>
+      <div class="kpis" id="kpis"></div>
+
+      <div class="block">
+        <div class="label-row"><h3>Cut off from hospital or town</h3><span class="hint" id="cut-count"></span></div>
+        <div class="tbl-wrap"><table class="tbl" id="cut-table">
+          <thead><tr><th>Settlement</th><th class="num">Before</th><th class="num">Now</th><th class="num">On foot</th></tr></thead>
+          <tbody></tbody></table></div>
+        <p class="fine">Minutes to the nearest hospital or clinic on the pre-event road network (typical speeds). "Now" removes roads under water/debris and bridges over an affected reach. <b>Verify</b>: still reachable, but only along roads that touch the footprint or run within 20 m of it.</p>
+      </div>
+
+      <div class="block">
+        <h3>Health facilities</h3>
+        <p id="health-line" class="body"></p>
+      </div>
+
+      <div class="block hidden" id="found-block">
+        <div class="label-row"><h3>What found it</h3><span class="hint">km² of the affected area</span></div>
+        <div id="found"></div>
+        <p class="fine">Evidence kinds overlap; the confidence layer shows how many agree at each pixel.</p>
+      </div>
+
+      <div class="block">
+        <h3>Evidence used</h3>
+        <ul class="evidence" id="evidence"></ul>
+      </div>
+
+      <div class="block downloads">
+        <a class="btn primary" id="dl-pdf" target="_blank" rel="noopener">Situation report (PDF)</a>
+        <a class="btn ghost" id="dl-html" target="_blank" rel="noopener">Report as web page</a>
+        <a class="btn ghost" id="dl-zip">Map data (GeoTIFF + GeoJSON)</a>
+      </div>
+
+      <details class="block limits">
+        <summary>What this analysis cannot tell you</summary>
+        <ul id="limits">
+          <li>Sentinel satellites pass every few days: water that drained between passes is not seen, and nothing is predicted in advance.</li>
+          <li>Radar is blind on steep slopes facing towards or away from it; optical images need clear sky.</li>
+          <li>A building "hit" lies inside the flood/debris footprint at 10 m — it may be standing.</li>
+          <li>Buildings, roads and villages come from OpenStreetMap before the event: unmapped ones are not counted.</li>
+          <li>Travel times use typical speeds; roads outside the analysed area are assumed passable.</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- 4 · flood path (bonus) -->
+    <section class="card" id="flow-card">
+      <h2 class="kicker">Where would a flood go?</h2>
+      <p class="body">Click a point upstream — a glacial lake, a landslide dam — to trace the path water takes down the valley and list the settlements along it.</p>
+      <button class="btn ghost" id="flow-btn" aria-pressed="false">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10M5.5 8.5 10 13l4.5-4.5M4 17h12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Pick a start point</button>
+      <div id="flow-out" class="hidden">
+        <p class="sub" id="flow-sum"></p>
+        <div class="tbl-wrap"><table class="tbl" id="flow-table">
+          <thead><tr><th>Settlement</th><th class="num">km down</th><th class="num">above river</th></tr></thead><tbody></tbody></table></div>
+        <p class="fine">Path follows the steepest descent on Copernicus DEM (90 m). "Directly in the path": ≤ 20 m above the river; "possibly": ≤ 60 m. No arrival times — they depend on the volume released.</p>
+      </div>
+    </section>
+
+    <!-- 5 · past runs -->
+    <section class="card" id="history-card">
+      <h2 class="kicker">Saved analyses</h2>
+      <ul class="history" id="history"><li class="fine">None yet.</li></ul>
+    </section>
+
+    <footer class="foot">
+      <p>Contains modified Copernicus Sentinel data. Copernicus DEM © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA. © OpenStreetMap contributors (pre-event snapshot, ODbL). Flood model trained on Kuro Siwo (CC BY 4.0).</p>
+      <p>Educational prototype — not an operational tool. Verify on the ground.</p>
+    </footer>
+  </aside>
+
+  <main class="mapwrap">
+    <div id="map" aria-label="Map"></div>
+
+    <div class="view-switch" id="view-switch" role="tablist" aria-label="Background">
+      <button role="tab" data-view="map" aria-selected="true">Map</button>
+      <button role="tab" data-view="s2_before" disabled>Before</button>
+      <button role="tab" data-view="s2_after" disabled>After</button>
+      <button role="tab" data-view="radar_change" disabled>Radar change</button>
+    </div>
+
+    <div class="layers" id="layers">
+      <button class="layers-toggle" id="layers-toggle" aria-expanded="true">Layers</button>
+      <div class="layers-body" id="layers-body"></div>
+    </div>
+
+    <div class="legend" id="legend"></div>
+    <div class="draw-tip hidden" id="draw-tip">Drag a box over the valley or floodplain · <kbd>Esc</kbd> to cancel</div>
+  </main>
+</div>
+<script src="/vendor/maplibre-gl.js"></script>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

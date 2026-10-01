@@ -17,6 +17,7 @@ from scipy.ndimage import minimum_filter, uniform_filter
 
 CHANNELS = ("post_vv", "post_vh", "pre_vv", "pre_vh", "d_vv", "d_vh", "slope", "rel_elev")
 N_CHANNELS = len(CHANNELS)
+CLASSES = ("no_water", "permanent_water", "flood")          # the model's output classes
 
 
 def to_db(power: np.ndarray) -> np.ndarray:

@@ -8,7 +8,9 @@ Method
      at risk (over an affected reach).
   3. From all destinations at once (multi-source Dijkstra), compute each settlement's travel time to
      the nearest hospital/clinic and to the nearest town — before and after.
-  4. Status: cut off (no road route after), long detour (≥ 2× and ≥ +30 min), connected.
+  4. Status: cut off (no road route after), long detour (≥ 2× and ≥ +30 min), connected — or *possibly cut
+     off* when the only remaining routes use roads that touch the footprint or run within 20 m of it (a
+     bank road can be undercut, and a 10 m map cannot place the footprint's edge exactly): verify.
 Main roads, hospitals and towns up to ~25 km beyond the area are included (osm.fetch_context), so the
 nearest hospital can lie outside it; roads outside the analysed area are assumed intact (no flood map
 there) — stated as a limitation in the report.
@@ -100,11 +102,17 @@ def analyse(osm_layers: dict, road_status: list, bridge_status: list, affected: 
     n_area = len(roads)
     fwd = grid.from_lonlat().transform
     # which road features are cut: the damage step's "cut" roads, plus roads that ARE at-risk bridges
-    cut_roads = {i for i, f in enumerate(road_status) if f["properties"]["status"] == "cut"}
+    # (matched by OSM id, never by list position)
+    cut_ids = {f["properties"].get("osm_id") for f in road_status if f["properties"]["status"] == "cut"}
     risky_bridge_ids = {f["properties"].get("osm_id") for f in bridge_status if f["properties"]["status"] == "at risk"}
+    maybe_ids = {f["properties"].get("osm_id") for f in road_status if f["properties"]["status"] in ("touched", "near")}
+    cut_roads, maybe_roads = set(), set()
     for i, f in enumerate(roads):
-        if f["properties"].get("bridge") not in (None, "no") and f["properties"].get("osm_id") in risky_bridge_ids:
+        oid = f["properties"].get("osm_id")
+        if oid in cut_ids or (f["properties"].get("bridge") not in (None, "no") and oid in risky_bridge_ids):
             cut_roads.add(i)
+        elif oid in maybe_ids:
+            maybe_roads.add(i)
     health = list(osm_layers.get("health", {}).get("features", []))
     towns = [f for f in osm_layers.get("places", {}).get("features", []) if f["properties"].get("place") in ("city", "town")]
     if context:
@@ -120,6 +128,9 @@ def analyse(osm_layers: dict, road_status: list, bridge_status: list, affected: 
     Ga, Gfa = G.copy(), Gf.copy()
     for H in (Ga, Gfa):
         H.remove_edges_from([(u, v) for u, v, d in H.edges(data=True) if d["road"] in cut_roads])
+    # worst case: roads only touching the footprint, or running within 20 m of it, are gone too
+    Gw = Ga.copy()
+    Gw.remove_edges_from([(u, v) for u, v, d in Gw.edges(data=True) if d["road"] in maybe_roads])
 
     places = osm_layers.get("places", {}).get("features", [])
     pt = lambda f: shp_transform(fwd, shape(f["geometry"])).representative_point().coords[0]  # noqa: E731
@@ -127,15 +138,16 @@ def analyse(osm_layers: dict, road_status: list, bridge_status: list, affected: 
     targets = {"hospital": [pt(f) for f in health], "town": [pt(f) for f in towns]}
 
     res = AccessResult()
-    before, after, after_foot, nearest = {}, {}, {}, {}
+    before, after, after_foot, worst_case = {}, {}, {}, {}
     for name, pts in targets.items():
         before[name] = _times(G, _snap(G, pts))
         after[name] = _times(Ga, _snap(Ga, pts))
         after_foot[name] = _times(Gfa, _snap(Gfa, pts))
+        worst_case[name] = _times(Gw, _snap(Gw, pts)) if maybe_roads else after[name]
 
     snapped = _snap(G, settle_pts)
     snapped_f = _snap(Gfa, settle_pts)
-    counts = {"cut_off": 0, "long_detour": 0, "connected": 0, "no_mapped_road": 0, "foot_only": 0}
+    counts = {"cut_off": 0, "possibly_cut_off": 0, "long_detour": 0, "connected": 0, "no_mapped_road": 0, "foot_only": 0}
     for f, node, node_f in zip(places, snapped, snapped_f):
         props = {k: v for k, v in f["properties"].items()}
         props["label"] = display_name(props)
@@ -154,6 +166,9 @@ def analyse(osm_layers: dict, road_status: list, bridge_status: list, affected: 
                 worst = max(t1 / max(t0, 1) for t0, t1 in pairs)
                 extra = max(t1 - t0 for t0, t1 in pairs)
                 status = "long_detour" if (worst >= 2 and extra >= 30) else "connected"
+                # still linked, but only through roads that touch or run beside the footprint: verify on the ground
+                if (t0h is not None and worst_case["hospital"].get(node) is None) or (t0t is not None and worst_case["town"].get(node) is None):
+                    status = "possibly_cut_off"
             props.update(hospital_min_before=None if t0h is None else round(t0h), hospital_min_after=None if t1h is None else round(t1h),
                          town_min_before=None if t0t is None else round(t0t), town_min_after=None if t1t is None else round(t1t))
         props.update(status=status, hospital_on_foot_min=None if foot_h is None else round(foot_h))

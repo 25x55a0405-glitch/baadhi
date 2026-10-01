@@ -167,8 +167,9 @@ def read_s2(items, grid: Grid, bands=S2_BANDS) -> dict[str, np.ndarray]:
 
 
 # ---------------------------------------------------------------------------------- Copernicus DEM
-def read_dem(grid: Grid) -> np.ndarray:
-    items = search("cop-dem-glo-30", grid.lonlat_bounds(), dt.date(2000, 1, 1), dt.date(2100, 1, 1))
+def read_dem(grid: Grid, collection: str = "cop-dem-glo-30") -> np.ndarray:
+    """Copernicus DEM on the grid. GLO-30 (30 m) by default; GLO-90 for fast wide-area routing."""
+    items = search(collection, grid.lonlat_bounds(), dt.date(2000, 1, 1), dt.date(2100, 1, 1))
     return mosaic([read_to_grid(it.assets["data"].href, grid, Resampling.bilinear) for it in items])
 
 

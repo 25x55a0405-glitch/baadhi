@@ -98,6 +98,13 @@ def hydrology(dem: np.ndarray, grid: Grid, minor_km2: float = 1.0, major_km2: fl
     return catch, hand, hand_major, minor
 
 
+def prefetch_dem(grid: Grid, dem_res: float = 30.0, buffer_km: float = 3.0):
+    """Start the DEM download early (it is cached on disk), so load_terrain later only computes."""
+    w, s, e, n = grid.lonlat_bounds()
+    pad = buffer_km / 111.0
+    P.read_dem(make_grid((w - pad, s - pad, e + pad, n + pad), dem_res))
+
+
 def load_terrain(grid: Grid, waterways: dict | None = None, dem_res: float = 30.0, buffer_km: float = 3.0) -> Terrain:
     """DEM + derived layers on the analysis grid. Hydrology runs at the DEM's native 30 m (faster, and
     10 m would only resample the same information) over the area plus a margin, so flow paths are not
