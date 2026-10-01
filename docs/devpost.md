@@ -36,14 +36,17 @@ cloud) can answer all three — if someone turns it into a map and a list of nam
 
 ## Results
 
-- Trishuli case vs Copernicus EMSR927 (used only for checking): flood/debris map **F1 0.89–0.92** on development areas
-  and **0.86 on the held-out area**; 95 % of the buildings EMS graded as damaged lie in or at the edge of our footprint
-  in the upper valley.
-- Cut-off settlements: routing with our footprint and routing with EMS's own road-damage grading give the **same status
-  for 153 of 153 settlements** on the development areas and **92 %** on the held-out area (where our list is conservative).
+- Trishuli case vs Copernicus EMSR927 (used only for checking), deployed system: flood/debris map **F1 0.90 and 0.92** on the
+  development areas and **0.89 on the held-out area** (precision 0.86, recall 0.93); 94–95 % of the buildings EMS graded as damaged
+  lie in or at the edge of our footprint on the development areas (80 % on the held-out area).
+- Cut-off settlements: routing with our footprint and routing with EMS's own road-damage grading give the **same status for all
+  119 settlements checked** on the development areas (30 + 89) and **92 %** on the held-out area, where we flag 6 more as
+  "possibly cut off — verify".
 - The flood model on live Sentinel-1 scenes of the 2025 Punjab floods (EMSR838, never used in training): mean flood
-  **F1 0.80 vs 0.52** for a radar threshold rule, up to 0.95.
-- A 150–200 km² valley runs end to end in about 3–5 minutes on a laptop.
+  **F1 0.77 vs 0.52** for a radar threshold rule, up to 0.93. On the five Kuro Siwo test events it never saw, pooled F1
+  **0.78 vs 0.71** — it wins four and loses one (0.39 vs 0.66, where it calls new flood water "permanent water"); we show that too.
+- A new 150–250 km² area runs end to end in about 4 minutes on a laptop when the public map server answers quickly (measured
+  cold); 1–2½ minutes when cached; dense areas take about 5–8 minutes via the snapshot fallback.
 
 ## Challenges we ran into
 
@@ -54,12 +57,13 @@ cloud) can answer all three — if someone turns it into a map and a list of nam
 - **Farmland looks like damage** to radar after a harvest — optical evidence, where the sky is clear, now outranks it.
 - **Training on a CPU:** no GPU, so a compact network, 128-pixel crops and weight averaging; checkpoints that survive
   interruptions.
-- **History queries** to OpenStreetMap were slow until we stopped overloading the server (two parallel slots, polite
-  waiting).
+- **OpenStreetMap history** comes from a free public server that is sometimes overloaded. We fetch every layer in one
+  query, rotate over the three official servers, and — if none answers within 2½ minutes — cut the area out of the
+  newest dated Geofabrik snapshot from *before* the event; the report says which source and date it used.
 
 ## Accomplishments that we're proud of
 
-- The model beats the rule on every live test area, and it runs in seconds on a CPU.
+- The model beats the rule on every live test area and on 4 of 5 unseen test events, runs in seconds on a CPU — and we publish where it fails.
 - Honest evaluation: a held-out area, development areas labelled as such, and every limitation written down.
 
 ## What we learned

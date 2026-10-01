@@ -33,9 +33,9 @@ Radar sees through cloud. Optical evidence is used only where Sentinel-2 had cle
 model carry the map.
 
 **How accurate is it?**
-Against the Copernicus EMS delineation of the Trishuli flood: F1 0.89–0.92 on development areas and 0.86 on the area
-we held out (precision 0.97, recall 0.77). The misses are the upper flood trace on the banks, which leaves little
-visible change at 10 m.
+Against the Copernicus EMS delineation of the Trishuli flood, with the deployed system (rules + flood model): F1 0.90 and 0.92 on
+the development areas and 0.89 on the area we held out (precision 0.86, recall 0.93). Before we added the flood model the held-out
+score was 0.86 (precision 0.97, recall 0.77): the model adds recall in the wide, braided reach at some cost in precision.
 
 ## The AI model
 
@@ -45,24 +45,25 @@ dataset, on this laptop's CPU — no GPU, no ImageNet weights. It labels each pi
 from the radar images before and after plus slope and height.
 
 **How do you know it works on new places?**
-Kuro Siwo's official test events are never seen in training (including a Nepal event). And on live Sentinel-1 images of
-the 2025 Punjab floods, scored against the EMS maps, it reaches a mean F1 of 0.80 against 0.52 for the classic radar
-threshold — better in all four test areas.
+Kuro Siwo's official test events are never seen in training (five events in the shards we downloaded, including a Nepal one): pooled
+F1 0.78 against 0.71 for the classic radar threshold; it wins four events and loses one. On live Sentinel-1 images of the 2025 Punjab
+floods, scored against the EMS maps, the mean F1 is 0.77 against 0.52 — better in all four areas.
 
 **Your training data is sigma-nought, your live data is gamma-nought — how do you handle that?**
 We convert the live images to look like the training data (σ⁰ ≈ γ⁰ × cos of the incidence angle) and apply the same kind
 of speckle filter (Lee), then run exactly the same feature code as in training.
 
-**Why doesn't the model add much in the Trishuli case?**
-That flood left mostly debris and scoured ground, not standing water — the model maps water. With the model on, the
-Trishuli scores do not change (no false water in the mountains); on plains floods it is the strongest evidence we have.
+**Does the model matter in the Trishuli case?**
+It does add there: with the model on, the held-out area's recall rises from 0.77 to 0.93 (precision falls from 0.97 to 0.86), and the
+model supports 2.9 of the 5.1 km² mapped in the upper valley (the evidence layers overlap). Debris and scoured ground still come
+mainly from radar and optical change and the terrain rules; on plains floods the model is the strongest evidence we have.
 
 ## Damage and access
 
 **Is a "hit" building destroyed?**
 Not necessarily — it lies inside the flood/debris footprint at 10 m. EMS grades damage from very-high-resolution
-images; we flag exposure. In the upper valley, 95 % of the buildings EMS graded damaged are in or at the edge of our
-footprint.
+images; we flag exposure. In the upper valley, 94 % of the buildings EMS graded damaged are in or at the edge of our
+footprint (80 % in the held-out area).
 
 **How do you decide who is cut off?**
 We build the road network from pre-flood OpenStreetMap (including 25 km around the area so the nearest hospital can be
@@ -71,9 +72,25 @@ travel time to the nearest hospital/clinic and town before and after. No route a
 long detour. Footpaths are walked separately to tell whether a village can still be reached on foot.
 
 **How do you know the cut-off list is right?**
-We ran the same routing with the roads EMS graded damaged: same status for 34/34 settlements in the upper valley, 119/119
-at Bidur, and 92 % in the held-out Phosretar area, where our list is conservative (misses some villages behind damaged
-bank-side roads).
+We ran the same routing with the roads EMS graded damaged: same status for 30/30 settlements in the upper valley and 89/89 at Bidur,
+and 92 % (93/101) in the held-out Phosretar area. There EMS-based routing cuts off 17 settlements; we call 11 cut off and flag the
+other 6 as "possibly cut off — verify", and EMS-based routing still finds a road for 2 we call cut off.
+
+## Honesty questions
+
+**Where does the AI fail?**
+On Kuro Siwo test event 562 it labels 70 % of the flood pixels as permanent water (the before-images already showed water): F1 0.39
+against 0.66 for the plain rule. Where the before-images already show water, the mapped flood extent is a lower bound. It also
+struggles in braided rivers (Punjab AOI05 Trimmu: F1 0.39).
+
+**Which checkpoint did you deploy, and was it chosen on the test data?**
+The final epoch (30 of 30, averaged weights) — a rule fixed before any evaluation. Validation flood F1 peaked at epoch 2 (0.662) and
+stayed flat, while water IoU kept improving; the README shows both checkpoints on every test, and we kept the final
+one after seeing both sets of results.
+
+**You looked at Phosretar more than once — is it still held out?**
+It was held out of the detector's tuning. We scored the rule-only detector there first and the deployed system later; both numbers are
+reported and nothing was chosen from them.
 
 ## Limitations (say these before they ask)
 
@@ -86,5 +103,8 @@ bank-side roads).
 
 ## Speed
 
-**How long does it take?** About 3–5 minutes for a 150–200 km² valley on this laptop (no GPU), most of it downloading.
-The model itself runs in seconds per image with ONNX Runtime.
+**How long does it take?** About 4 minutes for a new 150–250 km² area on this laptop (no GPU; measured cold on Silchar),
+1–2½ minutes when the downloads are cached. Radar and optical downloads take about 2 minutes; the flood model takes
+30–80 s per area with ONNX Runtime on the CPU. The free OpenStreetMap history server is the one external dependency:
+if it is slow we fall back to a Geofabrik snapshot from before the event, and if both fail we still deliver the flood map
+and say that damage and access were not computed.

@@ -31,7 +31,7 @@ Everything below runs on this laptop. It needs the internet (satellite images an
 
 1. Type the date in **Flood date**.
 2. Click **Draw on map**, then drag a box over the valley or floodplain. Keep it under ~25 × 25 km (the box turns red
-   if it is too big). **Smaller is faster** — a 10 × 15 km valley takes about 3–5 minutes.
+   if it is too big). **Smaller is faster** — a new 10 × 15 km valley takes about 3–4 minutes.
 3. Press **Analyse this area**. The steps appear on the left while it works — talk the judges through them:
    *downloading radar tracks → terrain → optical images → AI model → flood map → damage → cut-off villages → report*.
 4. When the results appear: numbers, then **Before/After**, then the cut-off table, then the PDF.
@@ -42,9 +42,9 @@ Everything below runs on this laptop. It needs the internet (satellite images an
 |---|---|
 | The map background stays blank | Nothing is wrong with the analysis — the basemap server is slow. After 8 seconds the map switches to plain OpenStreetMap by itself. |
 | "The area is … km² — the limit is 600 km²" | Draw a smaller box. |
-| A step stays on "fetching data" for more than 5 minutes | The free map server (OpenStreetMap history) is busy. Keep talking through a saved run meanwhile; it usually continues. |
+| "OpenStreetMap history server is slow" appears in the steps | The free map server is busy; the system is already preparing a map snapshot from before the event in parallel (it names the source it used). Keep talking through a saved run meanwhile. |
 | "Stopped: …" in red | Read the message aloud (it is honest about what failed), then run a slightly different box or a saved case. |
-| No radar tracks found | No Sentinel-1 pass within 13 days after the date — pick a date closer to the event, or explain the revisit gap (it is in the limitations). |
+| "No usable satellite image of this area was found after …" | No Sentinel-1/-2 image yet after that date (new images appear 2–8 days after the pass) — pick an earlier date, or explain the revisit gap (it is in the limitations). |
 | The page looks stale after an update | Press Ctrl+Shift+R in Chrome. |
 
 ## Answers to have ready

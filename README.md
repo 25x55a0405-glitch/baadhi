@@ -81,36 +81,55 @@ area + date ─┬─ Sentinel-1 stacks (per track: up to 3 before, first after)
 - **Deployment:** exported to ONNX (`models/flood_model.onnx`), run with onnxruntime — identical
   output to PyTorch, 1.6× faster; the dashboard does not need PyTorch.
 
-**Results on data the model never saw** *(numbers for the final model are filled in by `baadhi/ml/evaluate.py` and `experiments/eval_live_water.py`)*
+**Results on data the model never saw.** Which checkpoint to deploy was fixed before any evaluation: the final
+one (epoch 30 of 30, averaged weights). Validation flood F1 peaks early (0.662 at epoch 2) and then stays within
+0.647–0.662, while the IoU of "any water after the event" keeps rising (0.65 → 0.71) and so does the IoU of the
+permanent-water class (0.29 → 0.36) — so we did not stop early. For transparency the table also shows the
+best-validation checkpoint (epoch 2).
 
-| Test | Plain radar rule (F1) | Model (F1) |
-|---|---|---|
-| Kuro Siwo test event 1111007, Nepal (Koshi plains) | 0.632 | 0.764 ⁽¹⁾ |
-| **Live Sentinel-1**, EMSR838 Punjab floods, AOI01 Rasoo Nagar (143 km² flooded) | 0.631 | **0.945** |
-| **Live Sentinel-1**, EMSR838, AOI02 Sharaqpur (65 km² flooded) | 0.313 | **0.906** |
+| Test (flood F1) | Plain radar rule | **Model, final epoch (deployed)** | Model, epoch 2 |
+|---|---|---|---|
+| **Kuro Siwo official test events** — 8,450 tiles from 5 events, pooled | 0.709 | **0.782** | 0.729 |
+| · Nepal 1111007, Koshi plains (2,318 tiles) | 0.632 | 0.776 | 0.764 |
+| · USA 1111013 (6,000 tiles) | 0.774 | 0.800 | 0.714 |
+| · 561 / 1111002 (38 / 27 tiles) | 0.737 / 0.485 | 0.885 / 0.786 | 0.880 / 0.672 |
+| · **562 (67 tiles) — the model loses** | 0.663 | **0.389** | 0.431 |
+| **Live Sentinel-1, EMSR838 Punjab floods** — 4 areas, mean | 0.522 | **0.774** | 0.802 |
+| · AOI01 Rasoo Nagar (143 km² flooded) | 0.631 | 0.932 | 0.945 |
+| · AOI02 Sharaqpur (65 km²) | 0.313 | 0.890 | 0.906 |
+| · AOI04 Najabat (26 km²) | 0.849 | 0.882 | 0.895 |
+| · AOI05 Trimmu (9 km², braided river) | 0.296 | 0.391 | 0.463 |
 
-⁽¹⁾ early checkpoint; updated with the final model. The live tests use exactly the Sentinel-1 pass
-EMS mapped from and score only inside the EMS area of interest.
+The model beats the rule on four of the five unseen Kuro Siwo events and on all four Punjab areas. On event 562 it
+labels 70 % of the flood pixels as *permanent* water (the before-images already showed water), so it misses most of
+the flood there. The live tests use exactly the Sentinel-1 pass EMS mapped from and score only inside the EMS area of
+interest; the rule is scored with permanent water counted as "not flood", the easier case for it.
 
 ## Case study: Trishuli GLOF, 26 Aug 2026 vs Copernicus EMSR927
 
-EMSR927 areas 1–3 were used while developing the detector; **area 5 (Phosretar) was held out** and
-evaluated once.
+EMSR927 areas 1–3 were used while developing the detector; **area 5 (Phosretar) was held out** of its tuning.
+The numbers are for the deployed system (physical rules + flood model — the model never saw EMSR927 or any other EMS
+map) with OpenStreetMap as of 24 Aug 2026.
 
 | Area | Flood/debris map: precision · recall · F1 | Buildings EMS graded damaged/destroyed that we flag | Damaged road length inside our footprint | Damaged bridges we flag (of those in OSM) |
 |---|---|---|---|---|
-| AOI 1–2 Syabru Bensi–Timure (dev) | 0.99 · 0.81 · 0.89 | 95 % | 85 % | 5 / 5 |
-| AOI 3 Bidur (dev) | 0.97 · 0.88 · 0.92 | 94 % | 84 % | 20 / 20 |
-| **AOI 5 Phosretar (held out)** | **0.97 · 0.77 · 0.86** | **63 %** | **55 %** | **24 / 30** |
+| AOI 1–2 Syabru Bensi–Timure (dev) | 0.99 · 0.82 · 0.90 | 94 % | 87 % | 5 / 5 |
+| AOI 3 Bidur (dev) | 0.95 · 0.90 · 0.92 | 95 % | 85 % | 20 / 20 |
+| **AOI 5 Phosretar (held out)** | **0.86 · 0.93 · 0.89** | **80 %** | **77 %** | **30 / 30** |
+
+The rule-only detector (no flood model) scored 0.99 · 0.81 · 0.89, 0.97 · 0.88 · 0.92 and, on Phosretar, 0.97 · 0.77 · 0.86
+(buildings 63 %, roads 55 %, bridges 24 / 30): the flood model adds recall in the wide, braided reach at Phosretar at some
+cost in precision. Without any OpenStreetMap at all (rivers taken from the terrain only) the map still scores F1 0.89 at
+Bidur and 0.90 at Phosretar, but counts no buildings, roads or settlements.
 
 In the upper valley the Pasang Lhamu highway is blocked in many places: **22 settlements lose their
 road link to the nearest hospital or town** (Syabru Bensi had a clinic 24 minutes away before the event).
 
 **Is the cut-off list right?** The same routing, run with roads cut where *EMS* graded them damaged instead of
-by our footprint, gives the same status for **34/34** settlements in the upper valley and **119/119** at Bidur
-(development areas), and **167/182 (92 %)** in the held-out Phosretar area — where our list is conservative
-(EMS-based routing cuts off 17 settlements, ours 4, 3 in common), because 45 % of the damaged road length there
-lies outside our footprint.
+by our footprint, gives the same status for **30/30** settlements in the upper valley and **89/89** at Bidur
+(development areas), and **93/101 (92 %)** in the held-out Phosretar area. There EMS-based routing cuts off 17
+settlements: we call 11 of them cut off and flag the other 6 as *possibly cut off — verify*; EMS-based routing still
+finds a road for 2 settlements that we call cut off. (23 % of the damaged road length there lies outside our footprint.)
 
 ## Setup
 
@@ -137,8 +156,11 @@ python serve.py
 ```
 
 Open http://127.0.0.1:8000, then either click a case-study area or *Draw on map*, choose the flood
-date and press **Analyse this area**. A 150–200 km² valley takes about 3–5 minutes on a laptop
-(most of it downloading imagery; repeat runs are faster). Then use *Before / After / Radar change* to
+date and press **Analyse this area**. On this laptop (no GPU) a new area of 150–250 km² took about 4 minutes when the
+public OpenStreetMap server answered quickly (Silchar, measured cold: radar and optical downloads ~2 min, the rest
+is compute). In dense areas that server needs 10–15 minutes for the pre-flood map, so the system cuts the area out
+of a Geofabrik snapshot instead (about 5 minutes the first time, cached afterwards). With everything cached an
+analysis takes 1–2 minutes. Then use *Before / After / Radar change* to
 see the evidence, click settlements for travel times, download the report or the map data, and use
 *Where would a flood go?* to trace a flood path from any point.
 
@@ -197,10 +219,15 @@ serve.py           start the dashboard
   neither is ready after 10 minutes, the flood/debris map is delivered anyway and damage/access are marked as
   not computed; the downloads continue and are cached, so running the same area again completes them.
 - **Where it was tuned.** Detector thresholds are physical and fixed; they were checked on EMSR927 areas
-  1–3, which therefore count as development areas. Area 5 was evaluated once. On EMSR838 the model alone
-  is an independent test; two rules for plains (model water not forced to touch the river corridor;
-  unknown height-above-river accepted on flat ground) were added after looking at AOI01, so the
-  *combined* detector's EMSR838 numbers are a development check.
+  1–3, which therefore count as development areas. Area 5 (Phosretar) was held out of that tuning: we first scored
+  the rule-only detector there and later the deployed system once the flood model was added — both results are shown
+  above, and nothing was chosen from them. The flood model never saw EMS data; on EMSR838 it is an independent
+  test, while two rules for plains (model water not forced to touch the river corridor; unknown height-above-river
+  accepted on flat ground) were added after looking at AOI01, so the *combined* detector's EMSR838 numbers
+  (mean F1 0.78) are a development check.
+- **The model can mistake new flood water for permanent water** (Kuro Siwo event 562: F1 0.39 against 0.66 for the
+  plain rule). The physical rules and the optical evidence still contribute to the final map, but where the
+  before-images already show water, treat the flood extent as a lower bound.
 - **Kuro Siwo's Nepal event is in the Koshi plains**, not the mountains; mountain performance is shown
   on the EMSR927 case study.
 

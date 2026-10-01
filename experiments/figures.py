@@ -27,11 +27,19 @@ C_TP, C_FP, C_FN = "#1b9e77", "#d95f02", "#7570b3"
 plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 8})
 
 
-def agreement(name: str):
+def agreement(name: str, run: Path | None = None):
+    """With `run` (runs/<id>) the figure shows the DEPLOYED system's footprint (detector + flood model);
+    without it, the physical-rule detector alone."""
     z, terrain, tracks, pre, post = E.load(name)
-    r = detect(terrain, tracks, pre, post)
     lab, dom = z["label"].astype(bool), z["domain"].astype(bool)
-    ours = r["cls"] > 0
+    if run is not None:
+        import system_run as S
+        cls = S.footprint(run)
+        assert cls.shape == lab.shape, f"run grid {cls.shape} differs from the reference grid {lab.shape}"
+        ours = cls > 0
+    else:
+        r = detect(terrain, tracks, pre, post)
+        ours = r["cls"] > 0
     s = E.scores(ours, lab, dom)
     rows, cols = np.nonzero(dom)
     pad = 40
@@ -73,6 +81,8 @@ def model_chart():
             if k == "all":
                 continue
             rows.append((f"Kuro Siwo test · {v['event']}", v["rule_flood_f1"], v["model_flood_f1"]))
+    if test_p.exists() and "all" in t:
+        rows.append(("Kuro Siwo test · all 8,450 tiles pooled", t["all"]["rule_flood_f1"], t["all"]["model_flood_f1"]))
     for k, v in live.items():
         rows.append((f"Live S-1 · EMSR838 {k}", v["rule"]["f1"], v["model"]["f1"]))
     fig, ax = plt.subplots(figsize=(6.4, 0.34 * len(rows) + 0.8), dpi=220)
@@ -96,7 +106,9 @@ def model_chart():
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "agreement"
     if what == "agreement":
-        for n in sys.argv[2:] or ["upper", "phosretar"]:
-            agreement(n)
+        args = sys.argv[2:]
+        deployed = "--deployed" in args          # use runs/trishuli-<area> (the full system) as the footprint
+        for n in [a for a in args if not a.startswith("--")] or ["upper", "phosretar"]:
+            agreement(n, ROOT / "runs" / f"trishuli-{n}" if deployed else None)
     elif what == "model":
         model_chart()

@@ -117,39 +117,63 @@ def _slot_wait(url: str) -> float:
     return float(min(waits)) + 1 if waits else 5.0
 
 
-def _run_query(q: str, timeout: int) -> dict:
-    """Run an Overpass query, rotating over the official instances and waiting politely for a free slot instead
-    of hammering them. A reply that reports a runtime error (e.g. a timeout part-way) is rejected — partial map
-    data would silently undercount — and a server that never answers is not asked the same job again."""
-    last = None
+HEDGE_DELAY = 15.0       # s before the same query is also sent to the next official instance
 
-    def ok(r):
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        remark = str(data.get("remark") or "")
-        if "error" in remark.lower():
-            raise RuntimeError(f"Overpass: {remark[:160]}")
-        return data
+
+def _run_query(q: str, timeout: int) -> dict:
+    """Run an Overpass query on the official instances, hedged: it goes to the first at once, and to the next
+    ones after HEDGE_DELAY seconds each if nobody has answered; the first good answer wins. One overloaded
+    server therefore cannot stall an analysis, while a healthy one is asked alone (no needless load on the
+    public service). A reply that reports a runtime error (e.g. a timeout part-way) is rejected — partial map
+    data would silently undercount."""
+    answer: dict = {}
+    errors: list[str] = []
+    lock = threading.Lock()
+    done = threading.Event()
+    finished = [0]
+
+    def ask(url: str, delay: float):
+        try:
+            if done.wait(delay):
+                return                                   # somebody else already answered
+            for _ in range(4):
+                if done.is_set():
+                    return
+                try:
+                    r = requests.post(url, data={"data": q}, headers=UA, timeout=timeout + 30)
+                except requests.ReadTimeout:
+                    errors.append(f"{url} gave no answer within {timeout + 30} s")
+                    return                               # that server is stuck: do not queue the same job again
+                except requests.RequestException as ex:
+                    errors.append(f"{url} {type(ex).__name__}")
+                    return
+                if r.status_code == 200:
+                    data = r.json()
+                    remark = str(data.get("remark") or "")
+                    if "error" in remark.lower():
+                        errors.append(f"{url}: {remark[:120]}")
+                        return
+                    with lock:
+                        if not answer:
+                            answer["data"] = data
+                    done.set()
+                    return
+                errors.append(f"{url} HTTP {r.status_code}")
+                if r.status_code not in (429, 503, 504):
+                    return
+                time.sleep(min(_slot_wait(url) or 5.0, 20))
+        finally:
+            with lock:
+                finished[0] += 1
 
     with _slots:
-        for attempt in range(6):
-            url = OVERPASS[attempt % len(OVERPASS)]
-            try:
-                r = requests.post(url, data={"data": q}, headers=UA, timeout=timeout + 30)
-                data = ok(r)
-                if data is not None:
-                    return data
-                last = f"{url} HTTP {r.status_code}"
-                if r.status_code not in (429, 503, 504):
-                    break
-            except requests.ReadTimeout:
-                last = f"{url} gave no answer within {timeout + 30} s"
-                break
-            except requests.RequestException as ex:
-                last = f"{url} {type(ex).__name__}"
-            time.sleep(min(_slot_wait(url) or 3.0 * (attempt + 1), 30))
-    raise RuntimeError(f"Overpass failed: {last}")
+        for i, url in enumerate(OVERPASS):
+            threading.Thread(target=ask, args=(url, i * HEDGE_DELAY), daemon=True, name="overpass").start()
+        while not done.is_set() and finished[0] < len(OVERPASS):
+            done.wait(0.5)
+    if answer:
+        return answer["data"]
+    raise RuntimeError("Overpass failed: " + "; ".join(errors[-3:]))
 
 
 def _bbox_q(bbox) -> str:
@@ -336,7 +360,7 @@ def run_in_background(fn, *args, **kwargs):
     return fut
 
 
-def fetch_pre_event(bbox, event: dt.date, km: float = 25.0, patience: float = 150.0, deadline: float = 570.0, say=None) -> dict:
+def fetch_pre_event(bbox, event: dt.date, km: float = 25.0, patience: float = 45.0, deadline: float = 570.0, say=None) -> dict:
     """Pre-event OpenStreetMap for an area and its surroundings, from whichever source answers first.
 
     1. Overpass history ("attic") queries — the map exactly as it stood two days before the event.

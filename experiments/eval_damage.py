@@ -30,10 +30,18 @@ fwd = grid.from_lonlat().transform
 g = lambda geom: shp_transform(fwd, geom)  # noqa: E731
 domain = unary_union([g(R.aoi_polygon(a)) for a in aois])
 
-z, terrain, tracks, pre, post = E.load(name)
-r = detect(terrain, tracks, pre, post)
-pad = 0.05
-layers = osm.fetch_all((bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad), dt.date(2026, 8, 26))
+import system_run as S  # noqa: E402
+
+RUN = S.run_arg()      # python eval_damage.py <area> [runs/<id>]: with a run, the DEPLOYED system's footprint is scored
+if RUN is not None:
+    r = {"cls": S.footprint(RUN)}
+    layers, _, src = S.pre_event(bbox, dt.date(2026, 8, 26))
+    print(f"scoring the deployed system: footprint of {RUN.name}; OSM {src}")
+else:
+    z, terrain, tracks, pre, post = E.load(name)
+    r = detect(terrain, tracks, pre, post)
+    pad = 0.05
+    layers = osm.fetch_all((bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad), dt.date(2026, 8, 26))
 dmg = damage.assess(r["cls"], grid, layers)
 affected = r["cls"] > 0
 

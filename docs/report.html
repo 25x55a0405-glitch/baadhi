@@ -43,11 +43,12 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.4pt; }
 Given any area and a flood date, Baadhi builds a map of flood water and debris from Sentinel-1 radar and
 Sentinel-2 optical images, counts the buildings, roads and bridges in its path on the pre-event
 OpenStreetMap, and finds the settlements that lost their road link to a hospital or town — from raw
-data, in about 3–5 minutes on a laptop — and writes a one-page situation report. Its AI component is a
-flood segmentation network trained from scratch on Kuro Siwo; on live Sentinel-1 scenes of the 2025
-Punjab floods it reaches a mean flood F1 of <b>0.80</b> against 0.52 for a radar threshold rule. On the
-Trishuli case study the flood/debris map agrees with the Copernicus EMS delineation at F1 0.89 (development
-areas) and <b>0.86 on the held-out area</b>.
+data, in minutes on a laptop — and writes a one-page situation report. Its AI component is a
+flood segmentation network trained from scratch on Kuro Siwo: on live Sentinel-1 scenes of the 2025
+Punjab floods it reaches a mean flood F1 of <b>0.77</b> against 0.52 for a radar threshold rule, and on the five
+Kuro Siwo test events it never saw a pooled F1 of <b>0.78</b> against 0.71 (it fails on one of them). On the
+Trishuli case study the flood/debris map agrees with the Copernicus EMS delineation at F1 0.90 and 0.92 (development
+areas) and <b>0.89 on the held-out area</b>.
 </div>
 
 <h2>1 · Problem and what the system answers</h2>
@@ -66,7 +67,7 @@ as it was before the event.</p>
 <h2>2 · Data and the rules we keep</h2>
 <p>Inputs: Sentinel-1 RTC (γ⁰), Sentinel-2 L2A and Copernicus DEM GLO-30/90 from Microsoft Planetary Computer; OpenStreetMap
 as it was before the event (Overpass "attic" query, two days before the event date at 00:00 UTC — EMSR927 began on
-25 Aug 22:00 UTC); Kuro Siwo for training only. <b>Copernicus EMS, UNOSAT and other published flood maps are never
+25 Aug 22:00 UTC; if that server is slow, the newest dated Geofabrik regional snapshot from before the event, cut out locally); Kuro Siwo for training only. <b>Copernicus EMS, UNOSAT and other published flood maps are never
 inputs</b>: EMSR927 and EMSR838 are used only to score results, in code under <code>experiments/</code> that the system never
 imports. No detector threshold was fitted to EMS maps (section 7).</p>
 
@@ -111,56 +112,75 @@ Footpaths are walked at 3 km/h to tell whether a cut-off village can still be re
 The flood path follows D8 directions on GLO-90 and lists named places ≤ 400 m from the path and ≤ 60 m above the river.</p>
 
 <h2>4 · Results — Trishuli GLOF vs Copernicus EMSR927</h2>
-<p>EMSR927 areas 1–3 were used while developing the detector; <b>area 5 (Phosretar) was held out and evaluated once</b>.
-Scores are computed inside each EMS area of interest, excluding what EMS marked "not analysed".</p>
+<p>EMSR927 areas 1–3 were used while developing the detector; <b>area 5 (Phosretar) was held out</b> of its tuning. The scores are for the
+deployed system — physical rules plus the flood model, which never saw EMSR927 or any other EMS map — with OpenStreetMap as of 24 Aug 2026,
+computed inside each EMS area of interest and excluding what EMS marked "not analysed".</p>
 <table class="wide">
 <tr><th>Area</th><th class="n">Precision</th><th class="n">Recall</th><th class="n">F1</th><th class="n">IoU</th><th class="n">EMS damaged buildings we flag</th><th class="n">Damaged road length in footprint</th><th class="n">Damaged bridges flagged / in OSM</th></tr>
-<tr><td>AOI 1–2 Syabru Bensi–Timure <span class="tag">dev</span></td><td class="n">0.99</td><td class="n">0.81</td><td class="n">0.89</td><td class="n">0.81</td><td class="n">95 %</td><td class="n">85 %</td><td class="n">5 / 5</td></tr>
-<tr><td>AOI 3 Bidur <span class="tag">dev</span></td><td class="n">0.97</td><td class="n">0.88</td><td class="n">0.92</td><td class="n">0.85</td><td class="n">94 %</td><td class="n">84 %</td><td class="n">20 / 20</td></tr>
-<tr class="hl"><td>AOI 5 Phosretar <span class="tag">held out</span></td><td class="n">0.97</td><td class="n">0.77</td><td class="n">0.86</td><td class="n">0.75</td><td class="n">63 %</td><td class="n">55 %</td><td class="n">24 / 30</td></tr>
+<tr><td>AOI 1–2 Syabru Bensi–Timure <span class="tag">dev</span></td><td class="n">0.99</td><td class="n">0.82</td><td class="n">0.90</td><td class="n">0.82</td><td class="n">94 %</td><td class="n">87 %</td><td class="n">5 / 5</td></tr>
+<tr><td>AOI 3 Bidur <span class="tag">dev</span></td><td class="n">0.95</td><td class="n">0.90</td><td class="n">0.92</td><td class="n">0.86</td><td class="n">95 %</td><td class="n">85 %</td><td class="n">20 / 20</td></tr>
+<tr class="hl"><td>AOI 5 Phosretar <span class="tag">held out</span></td><td class="n">0.86</td><td class="n">0.93</td><td class="n">0.89</td><td class="n">0.81</td><td class="n">80 %</td><td class="n">77 %</td><td class="n">30 / 30</td></tr>
 </table>
+<p class="small">The rule-only detector (no flood model) scored F1 0.89 and 0.92 on the development areas and — on Phosretar, which we looked at in that
+form first — 0.86 (precision 0.97, recall 0.77; buildings 63 %, roads 55 %, bridges 24 / 30). The flood model adds recall in the wide, braided
+reach at Phosretar at some cost in precision. Without any OpenStreetMap (rivers taken from the terrain only) the map still scores F1 0.89 at
+Bidur and 0.90 at Phosretar, but counts no buildings, roads or settlements.</p>
 <figure><img src="img/agreement_phosretar.png" alt="Agreement map for the held-out Phosretar area">
-<figcaption><b>Figure 1.</b> Held-out area: green = both Baadhi and EMS, orange = Baadhi only, purple = EMS only. The missed ground was seen clearly
-by Sentinel-2 (100 %) and by radar (99 %); it lies higher on the banks — median 11 m above the river on 16° slopes, against
-3 m and 3° where both agree — where the flood's upper trace left little change visible at 10 m.</figcaption></figure>
-<p>Buildings: in the upper valley EMS graded 760 buildings damaged or destroyed; 95 % of them lie in or at the edge of our
-footprint. "Precision" of building flags (our hit buildings with an EMS-graded point within 15 m) is 84 % upper, 86 % Bidur,
-65 % Phosretar. <b>Access:</b> in the upper valley 22 settlements lose their road link to the nearest hospital or town — Syabru
-Bensi had a clinic 24 minutes away before the event and none by road after.</p>
+<figcaption><b>Figure 1.</b> Held-out area, deployed system: green = both Baadhi and EMS, orange = Baadhi only, purple = EMS only. Baadhi marks more of
+the banks than EMS's delineation (precision 0.86) and misses little (recall 0.93).</figcaption></figure>
+<p>Buildings: in the upper valley EMS graded 760 buildings damaged or destroyed; 94 % of them lie in or at the edge of our
+footprint. "Precision" of building flags (our hit buildings with an EMS-graded point within 15 m) is 82 % upper, 86 % Bidur and
+52 % Phosretar — a rough proxy, since EMS graded only what it could see in very-high-resolution images. <b>Access:</b> in the upper
+valley 22 settlements lose their road link to the nearest hospital or town — Syabru Bensi had a clinic 24 minutes away before the
+event and none by road after.</p>
 <p><b>Checking the cut-off analysis.</b> The same routing was run twice on the same pre-event road network: once with roads cut by
 <i>our</i> footprint, once with roads cut where <i>EMS</i> graded them destroyed or damaged (both limited to the EMS areas). Every
 settlement's status (cut off / long detour / connected) was compared:</p>
 <table>
 <tr><th>Area</th><th class="n">Same status</th><th class="n">Cut off: ours / EMS-based</th></tr>
-<tr><td>AOI 1–2 Syabru Bensi–Timure <span class="tag">dev</span></td><td class="n">34 / 34 (100 %)</td><td class="n">26 / 26</td></tr>
-<tr><td>AOI 3 Bidur <span class="tag">dev</span></td><td class="n">119 / 119 (100 %)</td><td class="n">5 / 5 (and 36 / 36 long detours)</td></tr>
-<tr class="hl"><td>AOI 5 Phosretar <span class="tag">held out</span></td><td class="n">167 / 182 (92 %)</td><td class="n">4 / 17 (3 in both)</td></tr>
+<tr><td>AOI 1–2 Syabru Bensi–Timure <span class="tag">dev</span></td><td class="n">30 / 30 (100 %)</td><td class="n">22 / 22</td></tr>
+<tr><td>AOI 3 Bidur <span class="tag">dev</span></td><td class="n">89 / 89 (100 %)</td><td class="n">5 / 5 (and 33 / 33 long detours)</td></tr>
+<tr class="hl"><td>AOI 5 Phosretar <span class="tag">held out</span></td><td class="n">93 / 101 (92 %)</td><td class="n">13 (+6 "possibly") / 17 (11 in both)</td></tr>
 </table>
-<p>In the held-out area our list is conservative: 45 % of the road length EMS graded damaged lies outside our footprint (the bank-top
-misses of Figure 1), and 14 settlements behind those roads stay "connected" in our analysis.</p>
+<p>In the held-out area EMS-based routing cuts off 17 settlements: we call 11 of them cut off and flag the other 6 as "possibly cut off —
+verify" (all 17 are flagged one way or the other), and EMS-based routing still finds a road for 2 settlements that we call cut off.
+23 % of the road length EMS graded damaged lies outside our footprint.</p>
 
 <h2>5 · Results — the flood model on data it never saw</h2>
+<p><b>Which checkpoint.</b> The rule, fixed before any evaluation, was to deploy the final epoch (30 of 30, averaged weights). Validation flood
+F1 peaks early (0.662 at epoch 2) and then stays within 0.647–0.662, while the IoU of "any water after the event" keeps rising (0.65 → 0.71) and so
+does the IoU of the permanent-water class (0.29 → 0.36), so training was not stopped early. The best-validation checkpoint (epoch 2) is shown for comparison.</p>
 <div class="two">
 <div>
+<p><b>Kuro Siwo official test events</b> (never seen; 8,450 tiles from five events) — flood F1:</p>
+<table>
+<tr><th>Event</th><th class="n">Tiles</th><th class="n">Rule</th><th class="n">Model</th><th class="n">Epoch 2</th></tr>
+<tr><td>561</td><td class="n">38</td><td class="n">0.74</td><td class="n hl">0.89</td><td class="n">0.88</td></tr>
+<tr><td>562</td><td class="n">67</td><td class="n">0.66</td><td class="n">0.39</td><td class="n">0.43</td></tr>
+<tr><td>1111002</td><td class="n">27</td><td class="n">0.49</td><td class="n hl">0.79</td><td class="n">0.67</td></tr>
+<tr><td>1111007 Nepal (Koshi plains)</td><td class="n">2,318</td><td class="n">0.63</td><td class="n hl">0.78</td><td class="n">0.76</td></tr>
+<tr><td>1111013 USA</td><td class="n">6,000</td><td class="n">0.77</td><td class="n hl">0.80</td><td class="n">0.71</td></tr>
+<tr class="hl"><td>All, pooled</td><td class="n">8,450</td><td class="n">0.71</td><td class="n">0.78</td><td class="n">0.73</td></tr>
+</table>
+<p class="small">On event 562 the model labels 70 % of the flood pixels as <i>permanent</i> water (the before-images already showed water), so it
+misses most of the flood: F1 0.39 against 0.66 for the rule. The rule is scored with permanent water counted as "not flood", the easier case for it.</p>
 <p><b>Live Sentinel-1, EMSR838 Punjab floods (Aug 2025).</b> For each EMS area we take the ~14 km box with the most mapped
 flooding, use exactly the Sentinel-1 pass EMS mapped from, before-images from before the flood began, and score inside
 the EMS area only.</p>
 <table>
-<tr><th>EMSR838 area</th><th class="n">EMS flood</th><th class="n">Rule F1</th><th class="n">Model F1</th></tr>
-<tr><td>AOI01 Rasoo Nagar</td><td class="n">143 km²</td><td class="n">0.63</td><td class="n hl">0.95</td></tr>
-<tr><td>AOI02 Sharaqpur</td><td class="n">65 km²</td><td class="n">0.31</td><td class="n hl">0.91</td></tr>
-<tr><td>AOI04 Najabat</td><td class="n">26 km²</td><td class="n">0.85</td><td class="n hl">0.90</td></tr>
-<tr><td>AOI05 Trimmu</td><td class="n">9 km²</td><td class="n">0.30</td><td class="n hl">0.46</td></tr>
-<tr class="hl"><td>Mean</td><td></td><td class="n">0.52</td><td class="n">0.80</td></tr>
+<tr><th>EMSR838 area</th><th class="n">EMS flood</th><th class="n">Rule F1</th><th class="n">Model F1</th><th class="n">Epoch 2</th></tr>
+<tr><td>AOI01 Rasoo Nagar</td><td class="n">143 km²</td><td class="n">0.63</td><td class="n hl">0.93</td><td class="n">0.95</td></tr>
+<tr><td>AOI02 Sharaqpur</td><td class="n">65 km²</td><td class="n">0.31</td><td class="n hl">0.89</td><td class="n">0.91</td></tr>
+<tr><td>AOI04 Najabat</td><td class="n">26 km²</td><td class="n">0.85</td><td class="n hl">0.88</td><td class="n">0.90</td></tr>
+<tr><td>AOI05 Trimmu</td><td class="n">9 km²</td><td class="n">0.30</td><td class="n hl">0.39</td><td class="n">0.46</td></tr>
+<tr class="hl"><td>Mean</td><td></td><td class="n">0.52</td><td class="n">0.77</td><td class="n">0.80</td></tr>
 </table>
 <p class="small">Trimmu is a braided river: 317 flood patches with a median of 80 m², many at the scale of a pixel; the monsoon
 before-images already held water in many braids, which the model then calls permanent rather than new flood water.</p>
 </div>
 <div>
 <figure><img src="img/model_vs_rule.png" alt="Model vs rule F1">
-<figcaption><b>Figure 2.</b> Flood F1 of the model and of the radar threshold rule on scenes never used in training.</figcaption></figure>
-<p><b>Kuro Siwo official test events</b> <span class="small">[final model: pending]</span>. Early checkpoint: Nepal (1111007, Koshi plains)
-F1 0.76 vs 0.63 for the rule.</p>
+<figcaption><b>Figure 2.</b> Flood F1 of the model (final epoch) and of the radar threshold rule on scenes never used in training — including the one test event the model loses.</figcaption></figure>
 </div>
 </div>
 
@@ -169,8 +189,13 @@ F1 0.76 vs 0.63 for the rule.</p>
 and shows the classes, confidence and model probability, Sentinel-2 before/after and a radar change composite, buildings,
 blocked roads, bridges, health facilities and settlements by access status; clicking a settlement shows its travel times.
 Each run produces the one-page situation report (HTML/PDF, every number from the maps), GeoTIFFs and GeoJSON layers.
-A 150–200 km² Himalayan valley runs end to end in about 3–5 minutes on a 10-core laptop CPU without a GPU; downloads
-dominate. <span class="small">[cold-run timings of the practice events: pending]</span></p>
+Timings measured on this laptop (10-core CPU, no GPU), pipeline time without the report (about 10–15 s more): a new
+16 × 14 km area (Silchar 2022) took <b>221 s</b> from a cold start — radar and optical downloads about 2 min, pre-event OpenStreetMap
+115 s from the public history server, the rest compute. With the downloads cached the case-study areas run in 70 s (upper valley), 106 s (Bidur)
+and 92 s (Phosretar); Wayanad 2024 in 108 s. In dense areas the Overpass history server is the bottleneck (Bidur 638 s, Phosretar 876 s measured, even
+with requests hedged over its three official instances); after 45 s without an answer the system therefore cuts the area out of a Geofabrik
+snapshot from before the event in three low-priority worker processes (275 s for a 55 × 55 km cell the first time, instant afterwards) and uses
+whichever source answers first. If neither answers in 10 minutes it still delivers the flood map and says that damage and access were not computed.</p>
 
 <h2>7 · Limitations and honesty</h2>
 <ul>
@@ -179,9 +204,15 @@ dominate. <span class="small">[cold-run timings of the practice events: pending]
 <li><b>"Hit" is not "destroyed":</b> at 10 m a building inside the footprint may stand; EMS grades damage from very-high-resolution imagery.</li>
 <li><b>OpenStreetMap completeness:</b> unmapped buildings, bridges and villages are not counted — 9 of the 39 bridges EMS graded at Phosretar are not in OSM.</li>
 <li><b>Travel times</b> use typical class speeds; roads outside the analysed area are assumed passable.</li>
-<li><b>Where things were tuned:</b> detector thresholds are physical and fixed; they were checked on EMSR927 areas 1–3 (development), area 5 was
-evaluated once. On EMSR838 the model alone is an independent test; two plains rules were added after inspecting AOI01 (model water need
-not touch the river corridor; unknown height-above-river accepted on flat ground), so the combined detector's EMSR838 scores are a development check.</li>
+<li><b>Where things were tuned:</b> detector thresholds are physical and fixed; they were checked on EMSR927 areas 1–3 (development). Area 5 was held out of
+that tuning: the rule-only detector was scored there first and the deployed system later — both are reported and nothing was chosen from them. The flood
+model never saw EMS data; on EMSR838 it is an independent test, while two plains rules were added after inspecting AOI01 (model water need not touch the
+river corridor; unknown height-above-river accepted on flat ground), so the combined detector's EMSR838 scores (mean F1 0.78) are a development check.</li>
+<li><b>The model can mistake new flood water for permanent water</b> (Kuro Siwo event 562: F1 0.39 against 0.66 for the plain rule); where the
+before-images already show water, treat the mapped flood extent as a lower bound.</li>
+<li><b>Map-server dependence:</b> the pre-event OpenStreetMap comes from a free public history server that needs 10–15 minutes in dense areas. The fallback
+is the newest dated Geofabrik snapshot from before the event (named in the report; for events before 2025 it can be up to a year older); without either,
+damage and access are not computed.</li>
 <li><b>Kuro Siwo's Nepal event lies in the Koshi plains</b>; mountain performance is shown by the EMSR927 case study.</li>
 <li>Educational prototype, not an operational tool. No images of victims are used.</li>
 </ul>
@@ -189,7 +220,7 @@ not touch the river corridor; unknown height-above-river accepted on flat ground
 <h2>Attribution</h2>
 <p class="small">Contains modified Copernicus Sentinel data 2025–2026, processed by Microsoft Planetary Computer. Copernicus DEM: produced using
 Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018 provided under COPERNICUS by the European Union
-and ESA; all rights reserved. © OpenStreetMap contributors (ODbL), pre-event snapshots via the Overpass API. Kuro Siwo — N. I. Bountos et
+and ESA; all rights reserved. © OpenStreetMap contributors (ODbL), pre-event snapshots via the Overpass API and Geofabrik regional extracts. Kuro Siwo — N. I. Bountos et
 al., NeurIPS 2024 Datasets and Benchmarks (CC BY 4.0). Checking only: Copernicus Emergency Management Service © European Union
 (EMSR927, EMSR838). Basemap © OpenFreeMap © OpenMapTiles. MapLibre GL JS (BSD-3-Clause).</p>
 
