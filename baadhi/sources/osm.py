@@ -121,22 +121,20 @@ HEDGE_DELAY = 15.0       # s before the same query is also sent to the next offi
 
 
 def _run_query(q: str, timeout: int) -> dict:
-    """Run an Overpass query on the official instances, hedged: it goes to the first at once, and to the next
-    ones after HEDGE_DELAY seconds each if nobody has answered; the first good answer wins. One overloaded
-    server therefore cannot stall an analysis, while a healthy one is asked alone (no needless load on the
-    public service). A reply that reports a runtime error (e.g. a timeout part-way) is rejected — partial map
-    data would silently undercount."""
+    """Run an Overpass query on the official instances, hedged: it goes to the first at once, and to the next one
+    when the previous one has failed or HEDGE_DELAY seconds have passed without an answer; the first good answer
+    wins. One overloaded server (they often answer HTTP 504) therefore cannot stall an analysis, while a healthy
+    one is asked alone (no needless load on the public service). A reply that reports a runtime error (e.g. a
+    timeout part-way) is rejected — partial map data would silently undercount."""
     answer: dict = {}
     errors: list[str] = []
     lock = threading.Lock()
     done = threading.Event()
     finished = [0]
 
-    def ask(url: str, delay: float):
+    def ask(url: str):
         try:
-            if done.wait(delay):
-                return                                   # somebody else already answered
-            for _ in range(4):
+            for _ in range(3):
                 if done.is_set():
                     return
                 try:
@@ -159,18 +157,23 @@ def _run_query(q: str, timeout: int) -> dict:
                     done.set()
                     return
                 errors.append(f"{url} HTTP {r.status_code}")
-                if r.status_code not in (429, 503, 504):
+                if r.status_code != 429:                  # overloaded (5xx) or refused: let the next server try now
                     return
                 time.sleep(min(_slot_wait(url) or 5.0, 20))
         finally:
             with lock:
                 finished[0] += 1
 
+    started, t_last = 0, 0.0
     with _slots:
-        for i, url in enumerate(OVERPASS):
-            threading.Thread(target=ask, args=(url, i * HEDGE_DELAY), daemon=True, name="overpass").start()
-        while not done.is_set() and finished[0] < len(OVERPASS):
-            done.wait(0.5)
+        while not done.is_set():
+            alive = started - finished[0]
+            if started < len(OVERPASS) and (started == 0 or alive == 0 or time.time() - t_last >= HEDGE_DELAY):
+                threading.Thread(target=ask, args=(OVERPASS[started],), daemon=True, name="overpass").start()
+                started, t_last = started + 1, time.time()
+            elif started == len(OVERPASS) and alive == 0:
+                break
+            done.wait(0.25)
     if answer:
         return answer["data"]
     raise RuntimeError("Overpass failed: " + "; ".join(errors[-3:]))
@@ -319,7 +322,12 @@ def fetch_many(layers, bbox, when: dt.date, timeout: int = 480) -> dict[str, dic
                 fc.update(snapshot=when.isoformat(), source="overpass")
                 _cache_write(name, bbox, when, fc)
                 out[name] = fc
-        except Exception:  # noqa: BLE001 — too big or the server refused: fall back to smaller queries
+        except Exception as ex:  # noqa: BLE001
+            # Smaller queries help only when the combined one was too big for the server (a runtime-error remark).
+            # If the servers are overloaded or silent, many small retries would just hammer them: the caller's other
+            # source (the Geofabrik snapshot) takes over instead.
+            if "HTTP 5" in str(ex) or "gave no answer" in str(ex) or "HTTP 4" in str(ex):
+                raise
             for name in missing:
                 out[name] = fetch_tiled(name, bbox, when) if name in TILED else fetch(name, bbox, when)
     return out

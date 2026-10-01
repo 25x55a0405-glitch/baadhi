@@ -1,0 +1,41 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Situation report — Rasuwa — Timure to Syabru Bensi (Bhote Koshi)</title>
+<style>
+@page { size: A4; margin: 12mm; }
+body { font: 10.5px/1.45 'Segoe UI', system-ui, sans-serif; color: #15191c; margin: 0; }
+h1 { font-size: 18px; margin: 0 0 2px; } .sub { color: #5a646b; margin-bottom: 10px; }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0 10px; }
+.k { border: 1px solid #d5dade; border-radius: 6px; padding: 6px 8px; } .k b { display: block; font-size: 17px; }
+.k span { color: #5a646b; } .warn { border-color: #c0392b; } .warn b { color: #b3261e; }
+table { border-collapse: collapse; width: 100%; margin: 4px 0 8px; } td, th { border-bottom: 1px solid #e3e7ea; padding: 3px 4px; text-align: left; }
+th { color: #5a646b; font-weight: 600; } h2 { font-size: 12px; margin: 10px 0 3px; }
+.cols { display: grid; grid-template-columns: 1.1fr 1fr; gap: 12px; } img { width: 100%; border: 1px solid #d5dade; border-radius: 4px; }
+.small { font-size: 9px; color: #5a646b; } ul { margin: 2px 0 6px 16px; padding: 0; }
+.badge { display: inline-block; background: #fff3cd; border: 1px solid #e0c46c; border-radius: 4px; padding: 1px 6px; font-size: 9.5px; }
+</style></head><body>
+<h1>Flood &amp; debris situation report — Rasuwa — Timure to Syabru Bensi (Bhote Koshi)</h1>
+<div class="sub">Event date 26 August 2026 · generated 01 Oct 2026, 17:16 by Baadhi from satellite data · <span class="badge">Educational prototype — verify on the ground</span></div>
+
+<div class="grid">
+  <div class="k warn"><b>5.11 km²</b><span>flooded or debris-covered (2.29 km² water, 2.04 km² debris/mud)</span></div>
+  <div class="k warn"><b>613</b><span>buildings inside the footprint (+86 at its edge) of 6,378 mapped</span></div>
+  <div class="k warn"><b>22</b><span>settlements cut off by road from the nearest hospital or town (1 still reachable on foot)</span></div>
+  <div class="k"><b>35.16 km · 27</b><span>of road under water/debris where it blocks the way · bridges over an affected reach (verify)</span></div>
+</div>
+<div class="cols"><div>
+<h2>Settlements cut off by road</h2>
+<table><tr><th>Settlement</th><th>Hospital/clinic before</th><th>After</th><th>On foot now</th></tr><tr><td>Syabru Bensi</td><td>24 min</td><td>none by road</td><td>no mapped path</td></tr><tr><td>Tiwari</td><td>31 min</td><td>none by road</td><td>no mapped path</td></tr><tr><td><i>unnamed hamlet</i></td><td>33 min</td><td>none by road</td><td>no mapped path</td></tr><tr><td>Domen</td><td>34 min</td><td>none by road</td><td>157 min</td></tr><tr><td>Lingling</td><td>36 min</td><td>none by road</td><td>no mapped path</td></tr><tr><td>Pajung</td><td>38 min</td><td>none by road</td><td>no mapped path</td></tr><tr><td>Timure</td><td>41 min</td><td>none by road</td><td>no mapped path</td></tr><tr><td>Bhrajam</td><td>41 min</td><td>none by road</td><td>no mapped path</td></tr><tr><td>Bahun Danda</td><td>43 min</td><td>none by road</td><td>no mapped path</td></tr><tr><td>Rasuwa Gadhi</td><td>46 min</td><td>none by road</td><td>no mapped path</td></tr></table>
+<div class="small">22 cut off in total. Travel times from OpenStreetMap roads (typical speeds), nearest facility within ~25 km.</div>
+
+<h2>Roads blocked (longest first)</h2>
+<table><tr><th>Road</th><th>Blocked stretches</th><th>Under water/debris</th></tr><tr><td>unnamed unclassified</td><td>56</td><td>9.7 km</td></tr><tr><td>unnamed primary</td><td>31</td><td>8.3 km</td></tr><tr><td>unnamed path</td><td>55</td><td>6.3 km</td></tr><tr><td>unnamed trunk</td><td>19</td><td>3.1 km</td></tr><tr><td>Pasang Laahamu</td><td>10</td><td>1.8 km</td></tr></table>
+<h2>Health facilities</h2><div>In or next to the footprint: none of the mapped facilities.</div>
+<h2>Data used</h2>
+<ul><li>Sentinel-1 radar: track 85 (ascending): before 2026-07-23, 2026-08-04, 2026-08-16 → after 2026-08-28; track 121 (descending): before 2026-07-26, 2026-08-07, 2026-08-19 → after 2026-08-31 — skipped (covers 4% of the area); track 19 (descending): before 2026-07-31, 2026-08-12, 2026-08-24 → after 2026-09-05</li>
+<li>Sentinel-2 optical (clear pixels): before 2026-08-24, 2026-08-12; after 2026-08-27, 2026-09-01, 2026-09-08</li>
+<li>AI flood model: resnet18 U-Net trained on Kuro Siwo</li>
+<li>Copernicus DEM GLO-30 · OpenStreetMap as of 2026-08-24 (before the event, Overpass history)</li>
+<li>What found the affected area (km², kinds overlap): AI model 2.91 · radar change 1.25 · radar water 0.04 · optical change 3.00 · optical water 0.35 · terrain fill 0.11</li></ul>
+</div><div><img src="map.png" alt="Map of the affected area">
+<h2>What this report cannot tell you</h2><ul><li>Sentinel satellites revisit an area only every few days: what happened between passes, and water that drained before the next pass, is not seen. No warning ahead of an event is possible.</li><li>Radar cannot see steep slopes facing away from or towards the satellite (shadow, layover); optical images need clear sky.</li><li>At 10 m resolution a building &quot;hit&quot; means it lies in the flood/debris footprint, not that it collapsed.</li><li>Buildings, roads and settlements come from OpenStreetMap before the event; anything not mapped is not counted.</li><li>Travel times assume typical speeds per road type; roads outside the analysed area are assumed passable.</li></ul></div></div>
+<div class="small">Contains modified Copernicus Sentinel data 2026. Produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. © OpenStreetMap contributors (pre-event snapshot, ODbL). Flood model trained on Kuro Siwo (Bountos et al., NeurIPS 2024, CC BY 4.0).</div>
+</body></html>

@@ -138,7 +138,7 @@ data and OpenStreetMap are read on demand). Optional: Google Chrome or Microsoft
 report to PDF. No GPU and no accounts are needed.
 
 ```bash
-git clone https://github.com/<user>/baadhi.git
+git clone https://github.com/25x55a0405-glitch/baadhi.git
 cd baadhi
 python -m venv .venv
 # Windows: .venv\Scripts\activate      macOS/Linux: source .venv/bin/activate
@@ -155,10 +155,10 @@ pip install numpy scipy "rasterio>=1.4" "shapely>=2.0" pyproj networkx pysheds r
 python serve.py
 ```
 
-Open http://127.0.0.1:8000, then either click a case-study area or *Draw on map*, choose the flood
-date and press **Analyse this area**. On this laptop (no GPU) a new area of 150–250 km² took about 4 minutes when the
-public OpenStreetMap server answered quickly (Silchar, measured cold: radar and optical downloads ~2 min, the rest
-is compute). In dense areas that server needs 10–15 minutes for the pre-flood map, so the system cuts the area out
+Open http://127.0.0.1:8765 (the program prints the address; it takes the next free port if 8765 is busy), then either click a case-study area or *Draw on map*, choose the flood
+date and press **Analyse this area**. On this laptop (no GPU) a new area of 150–250 km² took 4–5 minutes when the
+public OpenStreetMap server answered quickly (measured cold: Silchar 250 s, Melamchi 286 s — radar and optical downloads
+1½–2 min, the rest is compute). In dense areas that server needs 10–15 minutes for the pre-flood map, so the system cuts the area out
 of a Geofabrik snapshot instead (about 5 minutes the first time, cached afterwards). With everything cached an
 analysis takes 1–2 minutes. Then use *Before / After / Radar change* to
 see the evidence, click settlements for travel times, download the report or the map data, and use
@@ -196,8 +196,10 @@ baadhi/            the system
   ml/              features, network, Kuro Siwo conversion, training, evaluation, inference (ONNX)
   sources/         Planetary Computer; OpenStreetMap pre-event snapshot (Overpass history, Geofabrik fallback)
 web/               dashboard (MapLibre GL, no build step)
-experiments/       evaluation against EMS maps (checking only), screenshots
+experiments/       evaluation against EMS maps (checking only), figures, the demo-video builder
 models/            flood_model.onnx + its config
+examples/          a real situation report and layers (Trishuli, 26 Aug 2026) to browse without running anything
+docs/              report (PDF), Devpost text, demo runbook, Q&A preparation, figures
 serve.py           start the dashboard
 ```
 
@@ -230,6 +232,11 @@ serve.py           start the dashboard
   before-images already show water, treat the flood extent as a lower bound.
 - **Kuro Siwo's Nepal event is in the Koshi plains**, not the mountains; mountain performance is shown
   on the EMSR927 case study.
+
+## License
+
+Code: MIT (see `LICENSE`). The flood model's weights were trained on Kuro Siwo (CC BY 4.0) and map data are
+© OpenStreetMap contributors (ODbL) — see *Attribution* below.
 
 ## Attribution
 

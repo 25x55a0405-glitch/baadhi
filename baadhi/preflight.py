@@ -36,7 +36,7 @@ def check(name):
 
 @check("Python packages")
 def _pkgs():
-    mods = ["numpy", "scipy", "rasterio", "shapely", "pyproj", "networkx", "torch", "onnxruntime", "pystac_client", "fastapi"]
+    mods = ["numpy", "scipy", "rasterio", "shapely", "pyproj", "networkx", "torch", "onnxruntime", "pystac_client", "fastapi", "osmium"]
     vers = {m: getattr(importlib.import_module(m), "__version__", "?") for m in mods}
     return f"torch {vers['torch']}, rasterio {vers['rasterio']}, onnxruntime {vers['onnxruntime']}"
 
@@ -87,13 +87,35 @@ def _dem():
     return f"{np.nanmin(dem):.0f}–{np.nanmax(dem):.0f} m"
 
 
-@check("OpenStreetMap pre-event snapshot (ohsome)")
+@check("OpenStreetMap history (official Overpass instances)")
 def _osm():
-    meta = requests.get("https://api.ohsome.org/v1/metadata", timeout=60).json()
-    latest = meta["extractRegion"]["temporalExtent"]["toTimestamp"]
-    r = requests.post("https://api.ohsome.org/v1/elements/count", data={"bboxes": ",".join(map(str, TEST_BBOX)), "time": "2026-07-27", "filter": "building=* and geometry:polygon"}, timeout=120)
-    r.raise_for_status()
-    return f"data to {latest[:10]}; {int(r.json()['result'][0]['value'])} buildings in test box on 2026-07-27"
+    from .sources import osm
+    w, s_, e, n = TEST_BBOX
+    q = f'[out:json][timeout:60][date:"2026-08-24T00:00:00Z"];way["building"]({s_},{w},{n},{e});out count;'
+    ok, bad = [], []
+    for url in osm.OVERPASS:
+        host = url.split("//")[1].split("/")[0]
+        t = time.time()
+        try:
+            r = requests.post(url, data={"data": q}, headers=osm.UA, timeout=70)
+            if r.status_code == 200:
+                ok.append(f"{host}: {int(r.json()['elements'][0]['tags']['ways'])} buildings in {time.time() - t:.0f}s")
+            else:
+                bad.append(f"{host}: HTTP {r.status_code}")
+        except requests.RequestException as ex:
+            bad.append(f"{host}: {type(ex).__name__}")
+    if not ok:
+        raise RuntimeError("no official instance answered — " + "; ".join(bad))
+    return "; ".join(ok + bad)
+
+
+@check("Pre-event OpenStreetMap fallback (Geofabrik dated snapshot + pyosmium)")
+def _geofabrik():
+    import osmium  # noqa: F401 — needed to cut an area out of a snapshot
+    from .sources import geofabrik
+    url, snap, region = geofabrik.choose_file(TEST_BBOX, EVENT - dt.timedelta(days=2))
+    cached = (geofabrik.CACHE / url.rsplit("/", 1)[1]).exists()
+    return f"{region}, snapshot {snap}" + (" (already downloaded)" if cached else " (downloaded when first needed)")
 
 
 def main() -> int:

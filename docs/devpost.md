@@ -45,8 +45,8 @@ cloud) can answer all three — if someone turns it into a map and a list of nam
 - The flood model on live Sentinel-1 scenes of the 2025 Punjab floods (EMSR838, never used in training): mean flood
   **F1 0.77 vs 0.52** for a radar threshold rule, up to 0.93. On the five Kuro Siwo test events it never saw, pooled F1
   **0.78 vs 0.71** — it wins four and loses one (0.39 vs 0.66, where it calls new flood water "permanent water"); we show that too.
-- A new 150–250 km² area runs end to end in about 4 minutes on a laptop when the public map server answers quickly (measured
-  cold); 1–2½ minutes when cached; dense areas take about 5–8 minutes via the snapshot fallback.
+- A new 150–250 km² area runs end to end in 4–5 minutes on a laptop when the public map server answers quickly (measured
+  cold on two areas); 1–2½ minutes when cached; dense areas take about 5–8 minutes via the snapshot fallback.
 
 ## Challenges we ran into
 

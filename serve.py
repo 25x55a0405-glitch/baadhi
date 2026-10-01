@@ -1,4 +1,4 @@
-"""Start the Baadhi dashboard:  python serve.py   (then open http://127.0.0.1:8000)"""
+"""Start the Baadhi dashboard:  python serve.py   (then open http://127.0.0.1:8765)"""
 import os
 import sys
 from pathlib import Path

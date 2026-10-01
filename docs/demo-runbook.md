@@ -10,8 +10,8 @@ Everything below runs on this laptop. It needs the internet (satellite images an
    cd D:\claude-code\baadhi
    .venv\Scripts\python.exe serve.py
    ```
-   Wait for `Baadhi dashboard on http://127.0.0.1:8000`. Leave this window open.
-3. Open **Google Chrome** at http://127.0.0.1:8000
+   Wait for `Baadhi dashboard on http://127.0.0.1:8765` (if it says another port, use that one). Leave this window open.
+3. Open **Google Chrome** at http://127.0.0.1:8765 (or the address printed above)
 4. Warm-up: click **Saved analyses → Rasuwa — Timure to Syabru Bensi**. The map should show orange debris along the
    river, red blocked roads, and red village dots. If it does, everything works.
 

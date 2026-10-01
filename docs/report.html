@@ -190,7 +190,7 @@ and shows the classes, confidence and model probability, Sentinel-2 before/after
 blocked roads, bridges, health facilities and settlements by access status; clicking a settlement shows its travel times.
 Each run produces the one-page situation report (HTML/PDF, every number from the maps), GeoTIFFs and GeoJSON layers.
 Timings measured on this laptop (10-core CPU, no GPU), pipeline time without the report (about 10–15 s more): a new
-16 × 14 km area (Silchar 2022) took <b>221 s</b> from a cold start — radar and optical downloads about 2 min, pre-event OpenStreetMap
+16 × 14 km area (Silchar 2022) took <b>221 s</b> from a cold start (Melamchi 2021: <b>274 s</b>) — radar and optical downloads 1½–2 min, pre-event OpenStreetMap
 115 s from the public history server, the rest compute. With the downloads cached the case-study areas run in 70 s (upper valley), 106 s (Bidur)
 and 92 s (Phosretar); Wayanad 2024 in 108 s. In dense areas the Overpass history server is the bottleneck (Bidur 638 s, Phosretar 876 s measured, even
 with requests hedged over its three official instances); after 45 s without an answer the system therefore cuts the area out of a Geofabrik

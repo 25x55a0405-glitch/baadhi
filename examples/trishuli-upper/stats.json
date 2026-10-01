@@ -1,0 +1,67 @@
+{
+ "buildings_hit": 613,
+ "buildings_possibly_hit": 86,
+ "buildings_total": 6378,
+ "roads_cut": 118,
+ "roads_blocked_km": 35.16,
+ "roads_affected_km": 35.51,
+ "bridges_at_risk": 27,
+ "bridges_total": 38,
+ "health_hit": 0,
+ "health_near": 0,
+ "health_total": 3,
+ "places_hit": 7,
+ "places_near": 0,
+ "affected_km2": 5.109,
+ "water_km2": 2.288,
+ "debris_km2": 2.041,
+ "access_cut_off": 22,
+ "access_possibly_cut_off": 0,
+ "access_long_detour": 0,
+ "access_connected": 8,
+ "access_no_mapped_road": 29,
+ "access_foot_only": 1,
+ "access_settlements": 59,
+ "access_health_facilities": 25,
+ "access_towns": 3,
+ "access_road_edges": 114012,
+ "access_road_edges_cut": 2150,
+ "access_context_km": 25,
+ "seconds": 69.8,
+ "tracks": [
+  "track 85 (ascending): before 2026-07-23, 2026-08-04, 2026-08-16 \u2192 after 2026-08-28",
+  "track 121 (descending): before 2026-07-26, 2026-08-07, 2026-08-19 \u2192 after 2026-08-31 \u2014 skipped (covers 4% of the area)",
+  "track 19 (descending): before 2026-07-31, 2026-08-12, 2026-08-24 \u2192 after 2026-09-05"
+ ],
+ "optical_dates": {
+  "before": [
+   "2026-08-24",
+   "2026-08-12"
+  ],
+  "after": [
+   "2026-08-27",
+   "2026-09-01",
+   "2026-09-08"
+  ]
+ },
+ "osm_snapshot": "2026-08-24",
+ "model": "resnet18 U-Net trained on Kuro Siwo",
+ "bbox": [
+  85.3,
+  28.13,
+  85.4,
+  28.29
+ ],
+ "event": "2026-08-26",
+ "evidence_km2": {
+  "radar_change": 1.25,
+  "radar_water": 0.04,
+  "optical_change": 3.0,
+  "optical_water": 0.35,
+  "model_water": 2.91,
+  "terrain_completed": 0.11,
+  "affected": 5.11
+ },
+ "osm_note": "",
+ "osm_source": "Overpass history"
+}

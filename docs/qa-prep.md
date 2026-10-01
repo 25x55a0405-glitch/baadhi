@@ -103,7 +103,7 @@ reported and nothing was chosen from them.
 
 ## Speed
 
-**How long does it take?** About 4 minutes for a new 150–250 km² area on this laptop (no GPU; measured cold on Silchar),
+**How long does it take?** 4–5 minutes for a new 150–250 km² area on this laptop (no GPU; measured cold on Silchar and Melamchi: 250 s and 286 s),
 1–2½ minutes when the downloads are cached. Radar and optical downloads take about 2 minutes; the flood model takes
 30–80 s per area with ONNX Runtime on the CPU. The free OpenStreetMap history server is the one external dependency:
 if it is slow we fall back to a Geofabrik snapshot from before the event, and if both fail we still deliver the flood map

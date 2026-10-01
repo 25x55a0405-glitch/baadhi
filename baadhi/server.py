@@ -1,7 +1,7 @@
 """Baadhi dashboard: choose an area and a flood date on the map, get the flood/debris map, the damage,
 the settlements cut off from hospitals and a one-page situation report.
 
-    python -m baadhi.server                 # then open http://127.0.0.1:8000
+    python -m baadhi.server                 # then open http://127.0.0.1:8765 (the next free port if that one is taken)
 
 One analysis runs at a time (it needs most of the laptop's memory and CPU); others wait in a queue.
 Every run is saved under runs/<id>/ and stays available after a restart.
@@ -275,7 +275,7 @@ def flowpath(req: FlowRequest):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "model": MODEL_PATH.exists(), "queued": sum(1 for j in JOBS.values() if j["status"] in ("queued", "running"))}
+    return {"ok": True, "app": "baadhi", "model": MODEL_PATH.exists(), "queued": sum(1 for j in JOBS.values() if j["status"] in ("queued", "running"))}
 
 
 @app.get("/")
@@ -287,15 +287,34 @@ if WEB.exists():
     app.mount("/", StaticFiles(directory=WEB), name="web")
 
 
+DEFAULT_PORT = 8765
+
+
+def free_port(host: str, start: int, tries: int = 30) -> int:
+    """First port from `start` on that nothing is listening on (other apps on a laptop often hold 8000 or 8080)."""
+    import socket
+    for port in range(start, start + tries):
+        with socket.socket() as s:
+            try:
+                s.bind((host, port))
+                return port
+            except OSError:
+                continue
+    raise OSError(f"no free port from {start} to {start + tries - 1}")
+
+
 def main():
     import uvicorn
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     a = ap.parse_args()
     RUNS.mkdir(exist_ok=True)
-    print(f"Baadhi dashboard on http://{a.host}:{a.port}", flush=True)
-    uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
+    port = free_port(a.host, a.port)
+    if port != a.port:
+        print(f"port {a.port} is in use by another program - using {port}", flush=True)
+    print(f"Baadhi dashboard on http://{a.host}:{port}", flush=True)
+    uvicorn.run(app, host=a.host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """Record the dashboard with headless Chrome (DevTools screencast) while a script drives it.
 
-    rec = Recorder(1920, 1080); rec.open("http://127.0.0.1:8000/#run=…")
+    rec = Recorder(1920, 1080); rec.open("http://127.0.0.1:8765/#run=…")
     rec.js("document.querySelector('[data-view=s2_after]').click()"); rec.hold(3)
     rec.save_clip("scene.mp4", speed=1.0); rec.close()
 
