@@ -1,5 +1,7 @@
 # Devpost submission — Baadhi (draft)
 
+**Try it:** https://baadhi.pages.dev — saved analyses of real floods (live analysis of any area runs locally; see the README).
+
 **Tagline:** Pick a place and a flood date — see where the water and debris went, what they hit, and who is cut off from a hospital. From raw satellite data, in minutes.
 
 ## Inspiration

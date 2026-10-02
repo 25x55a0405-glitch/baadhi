@@ -263,7 +263,8 @@ async function drawRun(j) {
   const b = j.bbox;
   const at = location.hash.match(/at=(-?[\d.]+),(-?[\d.]+),([\d.]+)/);   // shared view: #run=…&at=lon,lat,zoom
   if (at) map.jumpTo({ center: [+at[1], +at[2]], zoom: +at[3] });
-  else map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top: 70, bottom: 40, left: 40, right: 260 }, duration: 700 });
+  else map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { duration: 700, padding: matchMedia("(max-width: 860px)").matches
+    ? { top: 50, bottom: 70, left: 24, right: 24 } : { top: 70, bottom: 40, left: 40, right: 260 } });
   map.getSource("draft").setData(empty());
 }
 function kpi(big, text, alert = false) { return `<div class="kpi${alert ? " alert" : ""}"><b>${big}</b><span>${text}</span></div>`; }
@@ -450,6 +451,10 @@ $("#layers-toggle").addEventListener("click", () => {
   $("#layers-body").classList.toggle("hidden", !open);
 });
 
+if (matchMedia("(max-width: 860px)").matches) {            // phones: fold the layers list so it does not cover the map
+  $("#layers-toggle").setAttribute("aria-expanded", "false"); $("#layers-body").classList.add("hidden");
+}
+
 // ------------------------------------------------------------------ flood path (bonus)
 function setPicking(on) {
   state.picking = on;
@@ -521,15 +526,20 @@ async function loadHistory() {
     : `<li class="fine">None yet.</li>`;
   ul.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => openRun(b.dataset.id)));
 }
+let opening = null;
 async function openRun(id) {
-  const r = await fetch(`/api/runs/${id}`);
-  if (!r.ok) return;
-  const j = await r.json();
-  if (!location.hash.includes(`run=${id}`)) location.hash = `run=${id}`;   // keep extras such as &at=…
-  if (j.status === "done") showRun(j); else watch(id);
+  if (opening === id) return;             // asked twice at once (e.g. start-up plus a hash change): draw it once
+  opening = id;
+  try {
+    const r = await fetch(`/api/runs/${id}`);
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!location.hash.includes(`run=${id}`)) location.hash = `run=${id}`;   // keep extras such as &at=…
+    if (j.status === "done") await showRun(j); else watch(id);
+  } finally { opening = null; }
 }
 
-if (DEMO && !location.hash.includes("run=")) location.hash = "run=trishuli-upper";   // land on the case study, not an empty map
+if (DEMO && !location.hash.includes("run=")) history.replaceState(null, "", "#run=trishuli-upper");   // land on the case study, not an empty map (no hashchange event: it is opened once, below)
 loadHistory();
 buildLayerPanel();                 // shows its hint until a run is opened
 function fromHash() {

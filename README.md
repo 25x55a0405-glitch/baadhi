@@ -12,6 +12,10 @@ against Copernicus EMS activation **EMSR927**.
 
 > Educational prototype — not an operational tool. Every result should be verified on the ground.
 
+**Try it without installing anything:** the public demo at **https://baadhi.pages.dev** shows eight saved analyses
+(the Trishuli glacial-lake flood and other floods) exactly as the dashboard produces them. Analysing a new area and date
+runs on the local server described under *Run*, because it downloads satellite data for that place.
+
 ---
 
 ## What it answers
@@ -172,6 +176,13 @@ python -m baadhi.runner 85.30 28.13 85.40 28.29 2026-08-26 --name "Rasuwa — Bh
 
 writes a run folder under `runs/` (GeoTIFFs, GeoJSON layers, `stats.json`, `sitrep.html/pdf`) that the
 dashboard also lists.
+
+**Public demo** (plain files, e.g. Cloudflare Pages)
+
+```bash
+python experiments/export_static.py --out site       # freezes the saved analyses into plain files (needs a few saved runs)
+wrangler pages deploy site --project-name baadhi --branch main
+```
 
 **Checks and training** (need the full `requirements.txt`)
 
