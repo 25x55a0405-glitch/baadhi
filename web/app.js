@@ -3,6 +3,15 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = (x, d = 0) => (x == null || Number.isNaN(x) ? "—" : Number(x).toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d }));
 const MAX_KM2 = 600, MIN_KM2 = 1;
+// Public demo: the same page served as plain files (no Python behind it) — only saved analyses can be opened.
+// The exporter (experiments/export_static.py) sets window.BAADHI_DEMO and window.BAADHI_REPO.
+const DEMO = !!window.BAADHI_DEMO;
+if (DEMO) {
+  document.body.classList.add("demo");
+  const link = $("#demo-repo");
+  if (window.BAADHI_REPO) { link.href = window.BAADHI_REPO; link.classList.remove("hidden"); }
+  $("#form-card .kicker").textContent = "Open a saved analysis";
+}
 
 const COLORS = {
   water: "#256fd9", debris: "#d67820", channel: "#78aac8",
@@ -148,7 +157,10 @@ fetch("/api/presets").then((r) => r.json()).then((ps) => {
     for (const p of ps.filter((x) => (x.group || "") === g)) {
       const b = document.createElement("button");
       b.className = "chip"; b.type = "button"; b.textContent = p.short || p.name; b.title = `${p.name} · ${p.note}`;
-      b.addEventListener("click", () => { $("#date").value = p.date; $("#name").value = p.name; setBbox(p.bbox, { fit: true }); });
+      b.addEventListener("click", () => {
+        if (DEMO) { if (p.run) location.hash = `run=${p.run}`; return; }       // demo: open the saved analysis
+        $("#date").value = p.date; $("#name").value = p.name; setBbox(p.bbox, { fit: true });
+      });
       chips.appendChild(b);
     }
     box.append(label, chips);
@@ -220,6 +232,7 @@ async function drawRun(j) {
   const d = `/api/runs/${id}`;
   $("#dl-html").href = `${d}/sitrep.html`;
   $("#dl-zip").href = `${d}/bundle.zip`;
+  $("#dl-zip").classList.toggle("hidden", DEMO && !j.bundle);       // the demo ships the bundle only when it is small enough
   $("#dl-pdf").href = `${d}/sitrep.pdf`;   // printed in the background after the run (or on first click)
 
   const ev = [];
@@ -516,6 +529,7 @@ async function openRun(id) {
   if (j.status === "done") showRun(j); else watch(id);
 }
 
+if (DEMO && !location.hash.includes("run=")) location.hash = "run=trishuli-upper";   // land on the case study, not an empty map
 loadHistory();
 buildLayerPanel();                 // shows its hint until a run is opened
 function fromHash() {

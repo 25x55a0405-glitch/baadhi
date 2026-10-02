@@ -187,3 +187,10 @@ input.invalid { border-color: var(--cut); }
   .legend { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- public demo (window.BAADHI_DEMO): saved analyses only ---- */
+#demo-banner { display: none; background: #eef4fb; border-color: #c9dcf0; }
+.demo #demo-banner { display: block; }
+.demo #form-card .field, .demo #form-card #run-btn, .demo #form-card #form-msg { display: none; }
+.demo #flow-card { display: none; }
+#demo-banner a { display: inline-block; margin-top: 6px; font-weight: 600; }

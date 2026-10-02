@@ -9,12 +9,14 @@
 .pytest_cache/
 .venv/
 .work/
+.wrangler/
 __pycache__/
 data/
 experiments/out/
 models/*.pt
 models/runs/
 runs/
+site/
 video/
 web/dist/
 web/node_modules/
