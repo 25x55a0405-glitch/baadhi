@@ -198,3 +198,4 @@ input.invalid { border-color: var(--cut); }
 .demo #form-card .field, .demo #form-card #run-btn, .demo #form-card #form-msg { display: none; }
 .demo #flow-card { display: none; }
 #demo-banner a { display: inline-block; margin-top: 6px; font-weight: 600; }
+#live-note { background: #eef6ee; border-color: #c8dfc9; }

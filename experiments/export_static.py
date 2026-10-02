@@ -106,6 +106,7 @@ def main():
     for name in ("app.js", "style.css"):
         shutil.copy2(ROOT / "web" / name, out / name)
     shutil.copytree(ROOT / "web" / "vendor", out / "vendor", dirs_exist_ok=True)
+    shutil.copy2(HERE / "pages_worker.js", out / "_worker.js")      # the live engine when it is online, these files otherwise
     write(out / "_headers", "/api/*\n  Cache-Control: public, max-age=300\n/vendor/*\n  Cache-Control: public, max-age=86400\n")
 
     files = [p for p in out.rglob("*") if p.is_file()]

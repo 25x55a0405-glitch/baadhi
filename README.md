@@ -12,9 +12,10 @@ against Copernicus EMS activation **EMSR927**.
 
 > Educational prototype — not an operational tool. Every result should be verified on the ground.
 
-**Try it without installing anything:** the public demo at **https://baadhi.pages.dev** shows eight saved analyses
-(the Trishuli glacial-lake flood and other floods) exactly as the dashboard produces them. Analysing a new area and date
-runs on the local server described under *Run*, because it downloads satellite data for that place.
+**Try it without installing anything:** **https://baadhi.pages.dev**. While the author's laptop is online it is the *complete*
+dashboard — analyse any area and date (about 4–7 minutes, one analysis at a time), trace flood paths, open saved runs. When
+the laptop is off, the same address shows eight saved analyses (the Trishuli glacial-lake flood and others) exactly as the
+dashboard produces them. See *Public site* below for how this works and its limits.
 
 ---
 
@@ -195,6 +196,28 @@ python -m baadhi.ml.train --model resnet18 --epochs 30 --crops 3000 --lr 1e-3 --
 python -m baadhi.ml.evaluate models/runs/main/best.pt      # Kuro Siwo test events
 python -m baadhi.ml.infer export models/runs/main/best.pt models/flood_model.onnx
 ```
+
+## Public site
+
+`baadhi.pages.dev` is a Cloudflare Pages site with one small worker (`experiments/pages_worker.js`) in front of it:
+
+- **Live** — `scripts\go-live.ps1` starts the real server in public mode (`BAADHI_PUBLIC=1`), opens a free Cloudflare quick
+  tunnel to it (`wrangler tunnel quick-start`), and writes the tunnel's address to a Cloudflare KV key. The worker relays
+  every request to that address, so visitors get the full app. The tunnel address changes at each start; `baadhi.pages.dev` does not.
+- **Demo** — when the engine is off (`scripts\stop-live.ps1`, a shut laptop, a lost connection) the worker serves the static
+  export of eight saved analyses (`experiments/export_static.py`), so the link is never dead.
+- **Fair use** — a public engine on one laptop needs limits: 3 analyses per hour and 10 per day per visitor, 8 flood-path
+  traces per hour, at most 4 analyses waiting in line; saved analyses are unlimited. The worker passes the visitor's address in a header
+  signed with a secret shared with the server (`.work/live/edge_token.txt`, never committed); the owner's own browser is never limited.
+  The server runs at below-normal priority and the laptop is kept awake only while live.
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\go-live.ps1     # online (about a minute)
+powershell -ExecutionPolicy Bypass -File scripts\stop-live.ps1   # offline; the demo takes over at once
+wrangler pages deploy site --project-name baadhi --branch main   # after python experiments/export_static.py
+```
+
+To deploy under your own Cloudflare account, create a KV namespace (`wrangler kv namespace create baadhi-live`) and put its id in `wrangler.toml`.
 
 ## Repository layout
 

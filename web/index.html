@@ -20,11 +20,19 @@
       <p class="tag">Flood &amp; debris damage from space — Sentinel-1 radar, Sentinel-2 optical, Copernicus DEM and pre-event OpenStreetMap.</p>
     </header>
 
+    <!-- live public engine notice (shown only when the server runs in public mode) -->
+    <section class="card hidden" id="live-note">
+      <h2 class="kicker">Live engine</h2>
+      <p class="fine">You are using the complete Baadhi, running on the owner's laptop: draw any area, choose a flood date and it runs from raw
+        satellite data (about 4–5 minutes, one analysis at a time; each visitor gets 3 per hour). Saved analyses open instantly and
+        without limit.</p>
+    </section>
+
     <!-- demo notice (shown only on the public demo) -->
     <section class="card" id="demo-banner">
       <h2 class="kicker">Public demo</h2>
       <p class="fine">These are <b>saved analyses</b> of real floods, shown exactly as the dashboard produces them. Choosing any area and date
-        runs live on a local server (it downloads Sentinel-1/-2 data and the pre-flood map for that place), so it is switched off here.
+        runs live on a local server (it downloads Sentinel-1/-2 data and the pre-flood map for that place), so it is switched off here. When the owner's live engine is online, this same address opens the complete site instead.
         <a id="demo-repo" class="hidden" href="#" target="_blank" rel="noopener">Source code, README and report on GitHub →</a></p>
     </section>
 

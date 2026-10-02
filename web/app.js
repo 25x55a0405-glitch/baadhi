@@ -539,6 +539,7 @@ async function openRun(id) {
   } finally { opening = null; }
 }
 
+if (!DEMO) fetch("/api/health").then((r) => r.json()).then((h) => { if (h.public) $("#live-note").classList.remove("hidden"); }).catch(() => {});
 if (DEMO && !location.hash.includes("run=")) history.replaceState(null, "", "#run=trishuli-upper");   // land on the case study, not an empty map (no hashchange event: it is opened once, below)
 loadHistory();
 buildLayerPanel();                 // shows its hint until a run is opened

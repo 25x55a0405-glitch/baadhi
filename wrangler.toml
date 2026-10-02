@@ -1,0 +1,11 @@
+# Cloudflare Pages project for the public site (https://baadhi.pages.dev) — see README, "Public site".
+# `wrangler pages deploy site --project-name baadhi --branch main` publishes the folder made by experiments/export_static.py.
+# LIVE is a tiny key-value store that holds the address of the live engine while it is online (written by scripts/go-live.ps1).
+# To deploy under your own account, create one (`wrangler kv namespace create baadhi-live`) and put its id below.
+name = "baadhi"
+pages_build_output_dir = "site"
+compatibility_date = "2026-04-01"
+
+[[kv_namespaces]]
+binding = "LIVE"
+id = "8c633d1abb204b808b8fbb7425954e23"

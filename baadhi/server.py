@@ -13,6 +13,7 @@ import datetime as dt
 import io
 import json
 import math
+import os
 import re
 import threading
 import time
@@ -22,7 +23,7 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -108,6 +109,47 @@ def area_km2(b) -> float:
     return abs(e - w) * 111.32 * math.cos(math.radians((s + n) / 2)) * abs(n - s) * 110.57
 
 
+# ---------------------------------------------------------------------------------------------- public mode
+# When the dashboard is reachable from the internet (a Cloudflare tunnel to this laptop, started by scripts/go-live.ps1),
+# the visitors share one machine: analyses run one at a time, the waiting line is short and each visitor gets a small
+# allowance. Opening saved analyses is always free. Requests from the local browser (no Cloudflare in front) are never limited.
+PUBLIC = os.environ.get("BAADHI_PUBLIC") == "1"
+EDGE_TOKEN = os.environ.get("BAADHI_EDGE_TOKEN", "")          # shared with our Cloudflare worker, which relays the visitor's address
+LIMITS = {"run": (3, 3600, "analyses", "hour"), "run_day": (10, 86400, "analyses", "day"), "flow": (8, 3600, "flood-path traces", "hour")}
+MAX_WAITING = 4
+_hits: dict[tuple[str, str], list[float]] = {}
+
+
+def client_ip(request: Request) -> str | None:
+    """The visitor's address if the request came through Cloudflare, None for a direct local request."""
+    h = request.headers
+    if EDGE_TOKEN and h.get("x-baadhi-edge") == EDGE_TOKEN and h.get("x-baadhi-client"):
+        return h["x-baadhi-client"]
+    return h.get("cf-connecting-ip") or None
+
+
+def throttle(request: Request, kind: str):
+    """Raise HTTP 429 when a visitor has used up the allowance for `kind` ("run" or "flow"); otherwise record the use."""
+    if not PUBLIC:
+        return
+    ip = client_ip(request)
+    if ip is None:
+        return
+    now = time.time()
+    rules = ("run", "run_day") if kind == "run" else ("flow",)
+    with LOCK:
+        for name in rules:
+            n, window, what, per = LIMITS[name]
+            hist = [t for t in _hits.get((ip, name), []) if now - t < window]
+            _hits[(ip, name)] = hist
+            if len(hist) >= n:
+                mins = max(1, math.ceil((window - (now - hist[0])) / 60))
+                raise HTTPException(429, f"This public engine runs on one laptop, so each visitor gets {n} {what} per {per}. "
+                                         f"Try again in about {mins} min — saved analyses open without any limit.")
+        for name in rules:
+            _hits[(ip, name)].append(now)
+
+
 def check(req: RunRequest):
     w, s, e, n = req.bbox
     if not (-180 <= w < e <= 180 and -85 <= s < n <= 85):
@@ -141,7 +183,8 @@ def _work(job_id: str, req: RunRequest):
     except Exception as e:  # noqa: BLE001 — report any failure to the user instead of hanging
         out.mkdir(parents=True, exist_ok=True)
         (out / "error.txt").write_text(traceback.format_exc(), encoding="utf8")
-        job.update(status="error", error=str(e) if isinstance(e, NoDataError) else f"{type(e).__name__}: {e}")
+        msg = str(e) if isinstance(e, NoDataError) else f"{type(e).__name__}: {e}"
+        job.update(status="error", error=re.sub(r"[A-Za-z]:[\\/][^\s'\"]+", "<path>", msg))     # no local file paths in public messages
 
 
 _pdf_locks: dict[str, threading.Lock] = {}
@@ -166,8 +209,13 @@ def presets():
 
 
 @app.post("/api/runs")
-def start(req: RunRequest):
+def start(req: RunRequest, request: Request):
     check(req)
+    with LOCK:
+        waiting = sum(1 for j in JOBS.values() if j["status"] in ("queued", "running"))
+    if PUBLIC and client_ip(request) is not None and waiting >= MAX_WAITING:
+        raise HTTPException(503, f"The engine is busy ({waiting} analyses ahead of you). Try again in a few minutes — saved analyses open without any limit.")
+    throttle(request, "run")
     job_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
     with LOCK:
         ahead = sum(1 for j in JOBS.values() if j["status"] in ("queued", "running"))
@@ -264,7 +312,8 @@ def run_file(job_id: str, file: str):
 
 
 @app.post("/api/flowpath")
-def flowpath(req: FlowRequest):
+def flowpath(req: FlowRequest, request: Request):
+    throttle(request, "flow")
     from .flowpath import trace
     if not (-180 <= req.lon <= 180 and -85 <= req.lat <= 85):
         raise HTTPException(400, "Point outside the map")
@@ -275,7 +324,7 @@ def flowpath(req: FlowRequest):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "app": "baadhi", "model": MODEL_PATH.exists(), "queued": sum(1 for j in JOBS.values() if j["status"] in ("queued", "running"))}
+    return {"ok": True, "app": "baadhi", "public": PUBLIC, "model": MODEL_PATH.exists(), "queued": sum(1 for j in JOBS.values() if j["status"] in ("queued", "running"))}
 
 
 @app.get("/")
